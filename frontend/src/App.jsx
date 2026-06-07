@@ -1,11 +1,17 @@
-import React, { useState, createContext, useContext } from 'react'
-import { Routes, Route, Link, useLocation } from 'react-router-dom'
+import React, { useState, createContext, useContext, useEffect, useCallback } from 'react'
+import { Routes, Route, Link, useLocation, Navigate } from 'react-router-dom'
 import HomePage from './pages/HomePage'
 import ScriptViewPage from './pages/ScriptViewPage'
 import ScriptListPage from './pages/ScriptListPage'
+import AuthPage from './pages/AuthPage'
 
 // 语言上下文
 export const LanguageContext = createContext()
+
+// 认证上下文
+export const AuthContext = createContext()
+
+export const API_BASE = '/api'
 
 export const LANGUAGES = [
   { code: 'zh-CN', label: '简体中文', flag: '🇨🇳' },
@@ -66,6 +72,18 @@ export const UI_TEXTS = {
     uploadFailed: '文件上传失败',
     uploading: '解析中...',
     fileTooShort: '文件内容不足50个字符，无法生成剧本',
+    login: '登录',
+    register: '注册',
+    username: '用户名',
+    password: '密码',
+    email: '邮箱（选填）',
+    noAccount: '没有账号？去注册',
+    hasAccount: '已有账号？去登录',
+    loginSuccess: '登录成功',
+    registerSuccess: '注册成功，已自动登录',
+    logout: '退出登录',
+    welcome: '你好',
+    pleaseLogin: '请先登录后再使用',
   },
   'zh-TW': {
     appTitle: '改編你愛的小說',
@@ -119,6 +137,18 @@ export const UI_TEXTS = {
     uploadFailed: '檔案上傳失敗',
     uploading: '解析中...',
     fileTooShort: '檔案內容不足50個字符，無法生成劇本',
+    login: '登入',
+    register: '註冊',
+    username: '使用者名稱',
+    password: '密碼',
+    email: '電子郵件（選填）',
+    noAccount: '沒有帳號？去註冊',
+    hasAccount: '已有帳號？去登入',
+    loginSuccess: '登入成功',
+    registerSuccess: '註冊成功，已自動登入',
+    logout: '登出',
+    welcome: '你好',
+    pleaseLogin: '請先登入後再使用',
   },
   'en': {
     appTitle: 'Adapt Your Favorite Novel',
@@ -172,6 +202,18 @@ export const UI_TEXTS = {
     uploadFailed: 'File upload failed',
     uploading: 'Parsing...',
     fileTooShort: 'File content is less than 50 characters, cannot generate script',
+    login: 'Login',
+    register: 'Register',
+    username: 'Username',
+    password: 'Password',
+    email: 'Email (optional)',
+    noAccount: "Don't have an account? Register",
+    hasAccount: 'Already have an account? Login',
+    loginSuccess: 'Login successful',
+    registerSuccess: 'Registration successful, auto-logged in',
+    logout: 'Logout',
+    welcome: 'Hello',
+    pleaseLogin: 'Please login first',
   },
 }
 
@@ -180,39 +222,104 @@ function App() {
     return localStorage.getItem('uiLanguage') || 'zh-CN'
   })
 
+  // 认证状态
+  const [user, setUser] = useState(() => {
+    const saved = localStorage.getItem('user')
+    return saved ? JSON.parse(saved) : null
+  })
+  const [token, setToken] = useState(() => {
+    return localStorage.getItem('token') || null
+  })
+
+  const isLoggedIn = !!token && !!user
+
   const changeLanguage = (code) => {
     setUiLanguage(code)
     localStorage.setItem('uiLanguage', code)
   }
 
+  // 带认证的 API 请求封装
+  const apiFetch = useCallback(async (url, options = {}) => {
+    const headers = {
+      ...(options.headers || {}),
+    }
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`
+    }
+    // 如果 body 不是 FormData，添加 Content-Type
+    if (options.body && !(options.body instanceof FormData)) {
+      headers['Content-Type'] = 'application/json'
+    }
+    const res = await fetch(url, { ...options, headers })
+    if (res.status === 401) {
+      // Token 过期，清除登录状态
+      setUser(null)
+      setToken(null)
+      localStorage.removeItem('token')
+      localStorage.removeItem('user')
+    }
+    return res
+  }, [token])
+
+  const login = (userData, authToken) => {
+    setUser(userData)
+    setToken(authToken)
+    localStorage.setItem('token', authToken)
+    localStorage.setItem('user', JSON.stringify(userData))
+  }
+
+  const logout = () => {
+    setUser(null)
+    setToken(null)
+    localStorage.removeItem('token')
+    localStorage.removeItem('user')
+  }
+
   const t = UI_TEXTS[uiLanguage]
+
+  const authContextValue = {
+    user,
+    token,
+    isLoggedIn,
+    login,
+    logout,
+    apiFetch,
+  }
 
   return (
     <LanguageContext.Provider value={{ language: uiLanguage, setLanguage: changeLanguage, t }}>
+    <AuthContext.Provider value={authContextValue}>
       <div className="app">
         <header className="app-header">
           <div className="header-left">
             <h1 className="app-logo">🎬 {t.appTitle}</h1>
             <nav className="app-nav">
               <NavLink to="/" label={t.home} />
-              <NavLink to="/scripts" label={t.scripts} />
+              {isLoggedIn && <NavLink to="/scripts" label={t.scripts} />}
             </nav>
           </div>
           <div className="header-right">
-            <LanguageSwitcher
-              current={uiLanguage}
-              onChange={changeLanguage}
-            />
+            <LanguageSwitcher current={uiLanguage} onChange={changeLanguage} />
+            {isLoggedIn ? (
+              <div className="user-menu">
+                <span className="user-greeting">{t.welcome}, {user.username}</span>
+                <button className="btn btn-outline btn-sm" onClick={logout}>{t.logout}</button>
+              </div>
+            ) : (
+              <Link to="/auth" className="btn btn-primary btn-sm">{t.login}</Link>
+            )}
           </div>
         </header>
         <main className="app-main">
           <Routes>
             <Route path="/" element={<HomePage />} />
-            <Route path="/scripts" element={<ScriptListPage />} />
-            <Route path="/scripts/:id" element={<ScriptViewPage />} />
+            <Route path="/auth" element={isLoggedIn ? <Navigate to="/" /> : <AuthPage />} />
+            <Route path="/scripts" element={isLoggedIn ? <ScriptListPage /> : <Navigate to="/auth" />} />
+            <Route path="/scripts/:id" element={isLoggedIn ? <ScriptViewPage /> : <Navigate to="/auth" />} />
           </Routes>
         </main>
       </div>
+    </AuthContext.Provider>
     </LanguageContext.Provider>
   )
 }

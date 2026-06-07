@@ -16,7 +16,8 @@ from datetime import datetime, timezone
 import io
 
 from database import get_db, init_db
-from models import Script
+from models import Script, User
+from auth import hash_password, verify_password, create_access_token, get_current_user, require_user
 from deepseek_client import (
     generate_script,
     extract_character_lines,
@@ -99,6 +100,7 @@ class RenameCharacterRequest(BaseModel):
 
 class ScriptResponse(BaseModel):
     id: int
+    user_id: Optional[int] = None
     title: str
     original_text: str
     script_content: Optional[str]
@@ -106,6 +108,70 @@ class ScriptResponse(BaseModel):
     characters_json: Optional[str]
     created_at: Optional[str]
     updated_at: Optional[str]
+
+
+class RegisterRequest(BaseModel):
+    username: str = Field(..., min_length=2, max_length=50, description="用户名")
+    password: str = Field(..., min_length=6, max_length=100, description="密码")
+    email: Optional[str] = Field(None, description="邮箱（可选）")
+
+
+class LoginRequest(BaseModel):
+    username: str = Field(..., description="用户名")
+    password: str = Field(..., description="密码")
+
+
+class AuthResponse(BaseModel):
+    token: str
+    user: dict
+
+
+# ==================== 认证 API ====================
+
+@app.post("/api/auth/register", response_model=AuthResponse)
+def register(request: RegisterRequest, db: Session = Depends(get_db)):
+    """用户注册"""
+    # 检查用户名是否已存在
+    existing = db.query(User).filter(User.username == request.username).first()
+    if existing:
+        raise HTTPException(status_code=400, detail="用户名已被注册")
+
+    # 检查邮箱
+    if request.email:
+        existing_email = db.query(User).filter(User.email == request.email).first()
+        if existing_email:
+            raise HTTPException(status_code=400, detail="邮箱已被注册")
+
+    # 创建用户
+    user = User(
+        username=request.username,
+        email=request.email,
+        hashed_password=hash_password(request.password),
+    )
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+
+    # 生成 Token
+    token = create_access_token(data={"sub": str(user.id), "username": user.username})
+    return {"token": token, "user": user.to_dict()}
+
+
+@app.post("/api/auth/login", response_model=AuthResponse)
+def login(request: LoginRequest, db: Session = Depends(get_db)):
+    """用户登录"""
+    user = db.query(User).filter(User.username == request.username).first()
+    if not user or not verify_password(request.password, user.hashed_password):
+        raise HTTPException(status_code=401, detail="用户名或密码错误")
+
+    token = create_access_token(data={"sub": str(user.id), "username": user.username})
+    return {"token": token, "user": user.to_dict()}
+
+
+@app.get("/api/auth/me")
+def get_me(current_user: User = Depends(require_user)):
+    """获取当前登录用户信息"""
+    return {"user": current_user.to_dict()}
 
 
 # ==================== API 端点 ====================
@@ -241,6 +307,7 @@ async def upload_and_convert(
     title: Optional[str] = Query(None, description="剧本标题"),
     language: str = Query("zh-CN", description="输出语言代码：zh-CN, en, zh-TW"),
     db: Session = Depends(get_db),
+    current_user: User = Depends(require_user),
 ):
     """上传文件、解析文本并直接转化为剧本（一步完成）"""
     content = await file.read()
@@ -266,6 +333,7 @@ async def upload_and_convert(
 
     # 保存到数据库
     script = Script(
+        user_id=current_user.id,
         title=script_title,
         original_text=text,
         script_content=script_content,
@@ -280,26 +348,22 @@ async def upload_and_convert(
 
 
 @app.post("/api/convert", response_model=ScriptResponse)
-async def convert_to_script(request: ConvertRequest, db: Session = Depends(get_db)):
-    """将文本转化为剧本"""
-    # 调用DeepSeek生成剧本
+async def convert_to_script(request: ConvertRequest, db: Session = Depends(get_db),
+                            current_user: User = Depends(require_user)):
+    """将文本转化为剧本（需登录）"""
     script_content = await generate_script(request.text, request.language)
-
     if not script_content:
         raise HTTPException(status_code=500, detail="AI生成剧本失败，请稍后重试")
 
-    # 提取角色列表
     characters_json = await extract_characters_from_script(script_content, request.language)
 
-    # 自动生成标题（取原文前30个字符）
     title = request.title
     if not title:
-        # 清理原文，取前面部分作为标题
         clean_text = re.sub(r'\s+', ' ', request.text).strip()
         title = clean_text[:30] + ("..." if len(clean_text) > 30 else "")
 
-    # 保存到数据库
     script = Script(
+        user_id=current_user.id,
         title=title,
         original_text=request.text,
         script_content=script_content,
@@ -309,7 +373,6 @@ async def convert_to_script(request: ConvertRequest, db: Session = Depends(get_d
     db.add(script)
     db.commit()
     db.refresh(script)
-
     return script.to_dict()
 
 
@@ -319,32 +382,33 @@ def list_scripts(
     page_size: int = Query(20, ge=1, le=100, description="每页数量"),
     language: Optional[str] = Query(None, description="按语言筛选"),
     db: Session = Depends(get_db),
+    current_user: User = Depends(require_user),
 ):
-    """列出所有剧本"""
-    query = db.query(Script).order_by(Script.updated_at.desc())
+    """列出当前用户的剧本"""
+    query = db.query(Script).filter(Script.user_id == current_user.id).order_by(Script.updated_at.desc())
 
     if language:
         query = query.filter(Script.language == language)
 
-    total = query.count()
     scripts = query.offset((page - 1) * page_size).limit(page_size).all()
-
     return [s.to_dict() for s in scripts]
 
 
 @app.get("/api/scripts/{script_id}", response_model=ScriptResponse)
-def get_script(script_id: int, db: Session = Depends(get_db)):
+def get_script(script_id: int, db: Session = Depends(get_db),
+               current_user: User = Depends(require_user)):
     """获取单个剧本详情"""
-    script = db.query(Script).filter(Script.id == script_id).first()
+    script = db.query(Script).filter(Script.id == script_id, Script.user_id == current_user.id).first()
     if not script:
         raise HTTPException(status_code=404, detail="剧本不存在")
     return script.to_dict()
 
 
 @app.put("/api/scripts/{script_id}", response_model=ScriptResponse)
-def update_script(script_id: int, request: ScriptUpdateRequest, db: Session = Depends(get_db)):
+def update_script(script_id: int, request: ScriptUpdateRequest, db: Session = Depends(get_db),
+                  current_user: User = Depends(require_user)):
     """更新剧本内容"""
-    script = db.query(Script).filter(Script.id == script_id).first()
+    script = db.query(Script).filter(Script.id == script_id, Script.user_id == current_user.id).first()
     if not script:
         raise HTTPException(status_code=404, detail="剧本不存在")
 
@@ -358,26 +422,26 @@ def update_script(script_id: int, request: ScriptUpdateRequest, db: Session = De
     script.updated_at = datetime.now(timezone.utc)
     db.commit()
     db.refresh(script)
-
     return script.to_dict()
 
 
 @app.delete("/api/scripts/{script_id}")
-def delete_script(script_id: int, db: Session = Depends(get_db)):
+def delete_script(script_id: int, db: Session = Depends(get_db),
+                  current_user: User = Depends(require_user)):
     """删除剧本"""
-    script = db.query(Script).filter(Script.id == script_id).first()
+    script = db.query(Script).filter(Script.id == script_id, Script.user_id == current_user.id).first()
     if not script:
         raise HTTPException(status_code=404, detail="剧本不存在")
-
     db.delete(script)
     db.commit()
     return {"message": "剧本已删除", "id": script_id}
 
 
 @app.get("/api/scripts/{script_id}/characters")
-def get_characters(script_id: int, db: Session = Depends(get_db)):
+def get_characters(script_id: int, db: Session = Depends(get_db),
+                   current_user: User = Depends(require_user)):
     """获取剧本中的所有角色"""
-    script = db.query(Script).filter(Script.id == script_id).first()
+    script = db.query(Script).filter(Script.id == script_id, Script.user_id == current_user.id).first()
     if not script:
         raise HTTPException(status_code=404, detail="剧本不存在")
 
@@ -396,9 +460,10 @@ async def extract_character(
     script_id: int,
     character_name: str = Query(..., description="要提取的角色名"),
     db: Session = Depends(get_db),
+    current_user: User = Depends(require_user),
 ):
     """提取剧本中某角色的所有戏份"""
-    script = db.query(Script).filter(Script.id == script_id).first()
+    script = db.query(Script).filter(Script.id == script_id, Script.user_id == current_user.id).first()
     if not script:
         raise HTTPException(status_code=404, detail="剧本不存在")
     if not script.script_content:
@@ -425,9 +490,10 @@ async def rename_character(
     script_id: int,
     request: RenameCharacterRequest,
     db: Session = Depends(get_db),
+    current_user: User = Depends(require_user),
 ):
     """全局替换剧本中的角色名"""
-    script = db.query(Script).filter(Script.id == script_id).first()
+    script = db.query(Script).filter(Script.id == script_id, Script.user_id == current_user.id).first()
     if not script:
         raise HTTPException(status_code=404, detail="剧本不存在")
     if not script.script_content:
@@ -467,9 +533,10 @@ async def rename_character(
 
 
 @app.post("/api/scripts/{script_id}/re-extract-characters")
-async def re_extract_characters(script_id: int, db: Session = Depends(get_db)):
+async def re_extract_characters(script_id: int, db: Session = Depends(get_db),
+                                current_user: User = Depends(require_user)):
     """重新提取剧本中的角色列表"""
-    script = db.query(Script).filter(Script.id == script_id).first()
+    script = db.query(Script).filter(Script.id == script_id, Script.user_id == current_user.id).first()
     if not script:
         raise HTTPException(status_code=404, detail="剧本不存在")
     if not script.script_content:

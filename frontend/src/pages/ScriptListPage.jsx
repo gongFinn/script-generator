@@ -1,11 +1,10 @@
 import React, { useState, useEffect, useContext } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
-import { LanguageContext } from '../App'
-
-const API_BASE = '/api'
+import { LanguageContext, AuthContext, API_BASE } from '../App'
 
 export default function ScriptListPage() {
   const { t } = useContext(LanguageContext)
+  const { apiFetch } = useContext(AuthContext)
   const navigate = useNavigate()
 
   const [scripts, setScripts] = useState([])
@@ -21,7 +20,7 @@ export default function ScriptListPage() {
   const fetchScripts = async () => {
     setLoading(true)
     try {
-      const res = await fetch(`${API_BASE}/scripts?page_size=100`)
+      const res = await apiFetch(`${API_BASE}/scripts?page_size=100`)
       if (res.ok) {
         const data = await res.json()
         setScripts(data)
@@ -38,7 +37,7 @@ export default function ScriptListPage() {
   const handleDelete = async () => {
     if (!deleteId) return
     try {
-      const res = await fetch(`${API_BASE}/scripts/${deleteId}`, { method: 'DELETE' })
+      const res = await apiFetch(`${API_BASE}/scripts/${deleteId}`, { method: 'DELETE' })
       if (res.ok) {
         setScripts(prev => prev.filter(s => s.id !== deleteId))
         showToast(t.deleteSuccess)

@@ -1,11 +1,10 @@
 import React, { useState, useContext, useRef, useCallback, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { LanguageContext, LANGUAGES } from '../App'
-
-const API_BASE = '/api'
+import { LanguageContext, LANGUAGES, AuthContext, API_BASE } from '../App'
 
 export default function HomePage() {
   const { t, language: uiLang } = useContext(LanguageContext)
+  const { isLoggedIn, apiFetch } = useContext(AuthContext)
   const navigate = useNavigate()
 
   const [text, setText] = useState('')
@@ -55,7 +54,7 @@ export default function HomePage() {
       const formData = new FormData()
       formData.append('file', file)
 
-      const res = await fetch(`${API_BASE}/upload-text?language=${encodeURIComponent(uiLang)}`, {
+      const res = await apiFetch(`${API_BASE}/upload-text?language=${encodeURIComponent(uiLang)}`, {
         method: 'POST',
         body: formData,
       })
@@ -168,9 +167,8 @@ export default function HomePage() {
     setResult(null)
 
     try {
-      const res = await fetch(`${API_BASE}/convert`, {
+      const res = await apiFetch(`${API_BASE}/convert`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           text: text.trim(),
           title: title.trim() || undefined,
@@ -192,6 +190,24 @@ export default function HomePage() {
     } finally {
       setLoading(false)
     }
+  }
+
+  // 未登录时显示登录提示
+  if (!isLoggedIn) {
+    return (
+      <div className="home-page">
+        <div className="hero">
+          <h2>🎬 {t.appTitle}</h2>
+          <p>{t.subtitle}</p>
+        </div>
+        <div className="card" style={{ textAlign: 'center', padding: 48 }}>
+          <p style={{ fontSize: 18, marginBottom: 16, color: 'var(--text-secondary)' }}>🔒 {t.pleaseLogin}</p>
+          <button className="btn btn-primary btn-lg" onClick={() => navigate('/auth')}>
+            {t.login} / {t.register}
+          </button>
+        </div>
+      </div>
+    )
   }
 
   return (

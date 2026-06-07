@@ -1,13 +1,12 @@
 import React, { useState, useEffect, useContext } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
-import { LanguageContext } from '../App'
-
-const API_BASE = '/api'
+import { LanguageContext, AuthContext, API_BASE } from '../App'
 
 export default function ScriptViewPage() {
   const { id } = useParams()
   const navigate = useNavigate()
   const { t } = useContext(LanguageContext)
+  const { apiFetch } = useContext(AuthContext)
 
   const [script, setScript] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -36,7 +35,7 @@ export default function ScriptViewPage() {
   const fetchScript = async () => {
     setLoading(true)
     try {
-      const res = await fetch(`${API_BASE}/scripts/${id}`)
+      const res = await apiFetch(`${API_BASE}/scripts/${id}`)
       if (!res.ok) throw new Error('Not found')
       const data = await res.json()
       setScript(data)
@@ -64,7 +63,7 @@ export default function ScriptViewPage() {
   const handleSave = async () => {
     setSaving(true)
     try {
-      const res = await fetch(`${API_BASE}/scripts/${id}`, {
+      const res = await apiFetch(`${API_BASE}/scripts/${id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -91,7 +90,7 @@ export default function ScriptViewPage() {
     setExtracting(true)
     setExtractedContent('')
     try {
-      const res = await fetch(
+      const res = await apiFetch(
         `${API_BASE}/scripts/${id}/characters/extract?character_name=${encodeURIComponent(name)}`,
         { method: 'POST' }
       )
@@ -110,7 +109,7 @@ export default function ScriptViewPage() {
     if (!renameOldName || !renameNewName) return
     setRenaming(true)
     try {
-      const res = await fetch(`${API_BASE}/scripts/${id}/rename-character`, {
+      const res = await apiFetch(`${API_BASE}/scripts/${id}/rename-character`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -142,7 +141,7 @@ export default function ScriptViewPage() {
 
   const handleDelete = async () => {
     try {
-      await fetch(`${API_BASE}/scripts/${id}`, { method: 'DELETE' })
+      await apiFetch(`${API_BASE}/scripts/${id}`, { method: 'DELETE' })
       showToast(t.deleteSuccess)
       navigate('/scripts')
     } catch (err) {
@@ -264,7 +263,7 @@ export default function ScriptViewPage() {
                 className="btn btn-outline btn-sm"
                 onClick={async () => {
                   try {
-                    const res = await fetch(`${API_BASE}/scripts/${id}/re-extract-characters`, { method: 'POST' })
+                    const res = await apiFetch(`${API_BASE}/scripts/${id}/re-extract-characters`, { method: 'POST' })
                     if (res.ok) {
                       const data = await res.json()
                       setCharacters(data.characters || [])
