@@ -16,4 +16,8 @@ services:
       - key: PORT
         value: 8000
       - key: DATABASE_URL
-        value: sqlite:///./backend/scripts.db
+        value: sqlite:////var/data/scripts.db
+    disk:
+      name: data
+      mountPath: /var/data
+      sizeGB: 1
