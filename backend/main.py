@@ -369,10 +369,30 @@ async def upload_and_convert(
     return script.to_dict()
 
 
-@app.post("/api/convert", response_model=ScriptResponse)
+@app.post("/api/convert")
 async def convert_to_script(request: ConvertRequest, db: Session = Depends(get_db),
                             current_user: User = Depends(require_user)):
-    """将文本转化为剧本（需登录）"""
+    """将文本转化为剧本（需登录）— 自动检测长文本使用分章转换"""
+    # 检测是否为多章节长文本
+    chapters = split_into_chapters(request.text, request.language)
+    if len(chapters) >= 3:
+        # 多章节：使用分章转换，返回统一格式
+        result = await convert_long_text(request, db, current_user)
+        # convert_long_text 返回 {"script": ..., "chapters_converted": ...}
+        # 提取script并附加分章信息
+        s = result["script"]
+        return {
+            "id": s["id"], "user_id": s.get("user_id"), "title": s["title"],
+            "original_text": s["original_text"], "script_content": s["script_content"],
+            "language": s["language"], "category": s.get("category"),
+            "characters_json": s.get("characters_json"),
+            "created_at": s.get("created_at"), "updated_at": s.get("updated_at"),
+            "chapters_converted": result.get("chapters_converted"),
+            "total_chapters": result.get("total_chapters"),
+            "errors": result.get("errors"),
+        }
+
+    # 短文本：直接转换
     script_content = await generate_script(request.text, request.language)
     if not script_content:
         raise HTTPException(status_code=500, detail="AI生成剧本失败，请稍后重试")

@@ -391,6 +391,13 @@ export default function ScriptViewPage() {
   const [editContent, setEditContent] = useState('')
   const [editTitle, setEditTitle] = useState('')
   const [toast, setToast] = useState(null)
+  // 章节管理
+  const [chapters, setChapters] = useState([])
+  const [selectedChapter, setSelectedChapter] = useState('')
+  const [reconverting, setReconverting] = useState(false)
+  // 下载
+  const [showDownload, setShowDownload] = useState(false)
+  const [downloadFormat, setDownloadFormat] = useState('txt')
 
   // 智能编辑模块
   const [editModule, setEditModule] = useState(null) // 'dialogue'|'action'|'scene'|'entrance'|'transition'|'character'|null
@@ -515,6 +522,72 @@ export default function ScriptViewPage() {
   }
 
   useEffect(() => { fetchScript() }, [id])
+
+  // 加载章节列表
+  const fetchChapters = async () => {
+    try {
+      const res = await apiFetch(`${API_BASE}/scripts/${id}/chapters`)
+      if (res.ok) {
+        const data = await res.json()
+        setChapters(data.script_chapters || data.source_chapters || [])
+      }
+    } catch {}
+  }
+
+  // 加载选中章节到编辑区
+  const loadChapter = async (chapterName) => {
+    if (!chapterName) return
+    setSelectedChapter(chapterName)
+    try {
+      const res = await apiFetch(`${API_BASE}/scripts/${id}/chapters/${encodeURIComponent(chapterName)}`)
+      if (res.ok) {
+        const data = await res.json()
+        setEditContent(data.yaml)
+        showToast(`已加载章节: ${chapterName}`)
+      }
+    } catch { showToast('加载失败', 'error') }
+  }
+
+  // 重转选中章节
+  const reconvertChapter = async () => {
+    if (!selectedChapter) return
+    setReconverting(true)
+    try {
+      const res = await apiFetch(`${API_BASE}/scripts/${id}/chapters/${encodeURIComponent(selectedChapter)}/reconvert`, { method: 'POST' })
+      if (res.ok) {
+        const data = await res.json()
+        setScript(data.script)
+        setEditContent(data.script.script_content || '')
+        showToast(`章节 ${selectedChapter} 已重新转换`)
+      }
+    } catch { showToast('重转失败', 'error') }
+    finally { setReconverting(false) }
+  }
+
+  // 下载剧本
+  const handleDownload = () => {
+    const token = localStorage.getItem('token')
+    const url = `${API_BASE}/scripts/${id}/export?format=${downloadFormat}`
+    // 使用浏览器下载
+    const a = document.createElement('a')
+    a.href = url
+    a.download = ``
+    // 添加token到请求
+    fetch(url, { headers: { 'Authorization': `Bearer ${token}` } })
+      .then(res => res.blob())
+      .then(blob => {
+        const ext = downloadFormat === 'docx' ? 'docx' : downloadFormat === 'yaml' ? 'yaml' : 'txt'
+        const blobUrl = URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = blobUrl
+        a.download = `${script.title}.${ext}`
+        a.click()
+        URL.revokeObjectURL(blobUrl)
+        showToast('下载完成')
+        setShowDownload(false)
+      })
+      .catch(() => showToast('下载失败', 'error'))
+  }
 
   const handleSave = async () => {
     setSaving(true)
@@ -648,9 +721,45 @@ export default function ScriptViewPage() {
       {/* ============ 编辑视图 ============ */}
       {activeTab === 'edit' && (
         <div className="card">
-          <div className="form-group" style={{ marginBottom: 10 }}>
-            <label>{t.titlePlaceholder}</label>
-            <input className="input" value={editTitle} onChange={e => setEditTitle(e.target.value)} />
+          <div style={{ display: 'flex', gap: 10, marginBottom: 12, alignItems: 'flex-end', flexWrap: 'wrap' }}>
+            <div className="form-group" style={{ flex: 1, minWidth: 200 }}>
+              <label>{t.titlePlaceholder}</label>
+              <input className="input" value={editTitle} onChange={e => setEditTitle(e.target.value)} />
+            </div>
+            <div className="form-group" style={{ minWidth: 160 }}>
+              <label>📖 选取章节精修</label>
+              <div style={{ display: 'flex', gap: 6 }}>
+                <select className="select" value={selectedChapter} onChange={e => loadChapter(e.target.value)}
+                  onClick={() => !chapters.length && fetchChapters()}>
+                  <option value="">选择章节...</option>
+                  {chapters.map((ch, i) => <option key={i} value={ch}>{ch}</option>)}
+                </select>
+                {selectedChapter && (
+                  <button className="btn btn-outline btn-sm" onClick={reconvertChapter} disabled={reconverting}
+                    title="用AI重新转换此章节">
+                    {reconverting ? <span className="spinner" /> : '🔄'}
+                  </button>
+                )}
+              </div>
+            </div>
+            <div className="form-group" style={{ minWidth: 100 }}>
+              <label>💾 下载</label>
+              <div style={{ position: 'relative' }}>
+                <button className="btn btn-outline btn-sm" onClick={() => setShowDownload(!showDownload)} style={{ width: '100%' }}>
+                  📥 导出
+                </button>
+                {showDownload && (
+                  <div style={{ position: 'absolute', top: '100%', right: 0, zIndex: 10, background: 'var(--paper-light)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: 10, marginTop: 4, boxShadow: 'var(--shadow-lg)', minWidth: 160 }}>
+                    <select className="select" value={downloadFormat} onChange={e => setDownloadFormat(e.target.value)} style={{ marginBottom: 8 }}>
+                      <option value="txt">📄 TXT 文本</option>
+                      <option value="yaml">📝 YAML 源码</option>
+                      <option value="docx">📘 Word 文档</option>
+                    </select>
+                    <button className="btn btn-primary btn-sm" onClick={handleDownload} style={{ width: '100%' }}>下载</button>
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
 
           {/* 智能编辑模块按钮 */}
