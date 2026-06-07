@@ -311,32 +311,41 @@ function fallbackRender(text) {
       output.push(<div key={output.length} className="scene-desc">{extractVal(trimmed)}</div>)
     }
 
-    // 对话
-    else if (trimmed.startsWith('type:') && extractVal(trimmed) === 'dialogue') currentSection = 'dialogue'
-    else if (trimmed.startsWith('type:') && extractVal(trimmed) === 'action') currentSection = 'action'
-    else if (trimmed.startsWith('character:') && currentSection === 'dialogue') output.push(
-      <div key={output.length} className="beat-dialogue"><span className="beat-character">{extractVal(trimmed)}</span>
-    )
-    else if (trimmed.startsWith('line:')) output.push(
-      <span key={output.length}><span className="beat-colon">：</span><span className="beat-line">{extractVal(trimmed)}</span></div>
-    )
-    else if (trimmed.startsWith('emotion:') && currentSection === 'dialogue') output.push(
-      <span key={output.length} className="beat-emotion">【{extractVal(trimmed)}】</span>
-    )
-    else if (trimmed.startsWith('delivery:')) output.push(
-      <span key={output.length} className="beat-delivery">（{extractVal(trimmed)}）</span>
-    )
-
-    // 动作
-    else if (trimmed.startsWith('character:') && currentSection === 'action') output.push(
-      <div key={output.length} className="beat-action"><span className="beat-character">{extractVal(trimmed)}</span>
-    )
-    else if (trimmed.startsWith('action:')) output.push(
-      <span key={output.length}>（{extractVal(trimmed)}）</span></div>
-    )
-    else if (trimmed.startsWith('emotion:') && currentSection === 'action') output.push(
-      <span key={output.length} className="beat-emotion-tag">【{extractVal(trimmed)}】</span>
-    )
+    // 对话和动作beat统一渲染
+    else if (trimmed.startsWith('character:') && (currentSection === 'dialogue' || currentSection === 'action')) {
+      const isDialogue = currentSection === 'dialogue'
+      const charName = extractVal(trimmed)
+      let emotion = '', delivery = '', text = ''
+      let j = lines.indexOf(line) + 1
+      while (j < lines.length && lines[j].search(/S/) >= 10) {
+        const t = lines[j].trim()
+        if (t.startsWith('emotion:')) emotion = extractVal(t)
+        else if (t.startsWith('delivery:')) delivery = extractVal(t)
+        else if (t.startsWith('line:')) text = extractVal(t)
+        else if (t.startsWith('action:')) text = extractVal(t)
+        else break
+        j++
+      }
+      if (isDialogue && text) {
+        output.push(
+          <div key={output.length} className="beat-dialogue">
+            <span className="beat-character">{charName}</span>
+            {emotion && <span className="beat-emotion">【{emotion}】</span>}
+            {delivery && <span className="beat-delivery">（{delivery}）</span>}
+            <span className="beat-colon">：</span>
+            <span className="beat-line">{text}</span>
+          </div>
+        )
+      } else if (!isDialogue && text) {
+        output.push(
+          <div key={output.length} className="beat-action">
+            {emotion && <span className="beat-emotion-tag">【{emotion}】</span>}
+            <span className="beat-character">{charName}</span>
+            <span>（{text}）</span>
+          </div>
+        )
+      }
+    }
 
     // 转场
     else if (trimmed.startsWith('to:') && line.search(/\S/) === 8) output.push(
