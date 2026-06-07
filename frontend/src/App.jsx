@@ -19,6 +19,97 @@ export const LANGUAGES = [
   { code: 'en', label: 'English', flag: '🇺🇸' },
 ]
 
+export const CATEGORIES = [
+  { code: 'asian', label: '亚洲文学', flag: '🏮', icon: '⛩️', en_label: 'Asian Literature' },
+  { code: 'european', label: '欧洲文学', flag: '🏰', icon: '🎭', en_label: 'European Literature' },
+  { code: 'american', label: '美洲文学', flag: '🗽', icon: '🌵', en_label: 'American Literature' },
+  { code: 'other', label: '其他文学', flag: '🌍', icon: '📚', en_label: 'Other Literature' },
+]
+
+// 区域主题CSS变量映射（覆盖:root中的CSS变量）
+export const CATEGORY_THEMES = {
+  asian: {
+    '--paper': '#f5f0e8',
+    '--paper-dark': '#e8e0d0',
+    '--paper-light': '#faf7f0',
+    '--vermillion': '#c41e3a',
+    '--vermillion-hover': '#a0182e',
+    '--gold': '#b8860b',
+    '--gold-light': '#d4a745',
+    '--indigo': '#1a3a5c',
+    '--indigo-light': '#2a5a8c',
+    '--jade': '#5b8c5a',
+    '--jade-light': '#e8f0e8',
+    '--border': '#d4c8b8',
+    '--border-light': '#e8ddd0',
+    '--text': '#2c2c2c',
+    '--text-secondary': '#6b5e4e',
+    '--theme-bg': '#ebe5d9',
+    '--theme-font': "'Noto Serif SC', 'SimSun', serif",
+    '--theme-ornament': '🏮',
+  },
+  european: {
+    '--paper': '#f4f0eb',
+    '--paper-dark': '#e5dfd5',
+    '--paper-light': '#f9f6f2',
+    '--vermillion': '#3a1a6c',
+    '--vermillion-hover': '#241044',
+    '--gold': '#8b6914',
+    '--gold-light': '#c4a44a',
+    '--indigo': '#2a406a',
+    '--indigo-light': '#4a609a',
+    '--jade': '#2d5a3d',
+    '--jade-light': '#e5ede5',
+    '--border': '#c8bfb0',
+    '--border-light': '#dfd8cc',
+    '--text': '#2a2218',
+    '--text-secondary': '#6b5e4e',
+    '--theme-bg': '#e8e4df',
+    '--theme-font': "'Georgia', 'Times New Roman', serif",
+    '--theme-ornament': '🏰',
+  },
+  american: {
+    '--paper': '#f5f0e6',
+    '--paper-dark': '#e5dcc8',
+    '--paper-light': '#faf6ef',
+    '--vermillion': '#8b3a1a',
+    '--vermillion-hover': '#6b2a10',
+    '--gold': '#b8780a',
+    '--gold-light': '#d4982a',
+    '--indigo': '#2a4a3c',
+    '--indigo-light': '#4a7a5c',
+    '--jade': '#4a7c3a',
+    '--jade-light': '#eaf0e5',
+    '--border': '#d0c8b8',
+    '--border-light': '#e5ddd0',
+    '--text': '#3a2a18',
+    '--text-secondary': '#7a6a4a',
+    '--theme-bg': '#eae3d8',
+    '--theme-font': "'Palatino', 'Georgia', serif",
+    '--theme-ornament': '🗽',
+  },
+  other: {
+    '--paper': '#f2f4f6',
+    '--paper-dark': '#e2e4e8',
+    '--paper-light': '#f8f9fa',
+    '--vermillion': '#2c5c6a',
+    '--vermillion-hover': '#1a3c48',
+    '--gold': '#5a8a8a',
+    '--gold-light': '#8aaa9a',
+    '--indigo': '#3a4a5a',
+    '--indigo-light': '#5a6a7a',
+    '--jade': '#3a6a4a',
+    '--jade-light': '#e8eeec',
+    '--border': '#c8ccd0',
+    '--border-light': '#dfe2e6',
+    '--text': '#2a3036',
+    '--text-secondary': '#5a6066',
+    '--theme-bg': '#e4e8ea',
+    '--theme-font': "'Georgia', 'Noto Serif', serif",
+    '--theme-ornament': '🌍',
+  },
+}
+
 export const UI_TEXTS = {
   'zh-CN': {
     appTitle: '改编你爱的小说',
@@ -222,6 +313,11 @@ function App() {
     return localStorage.getItem('uiLanguage') || 'zh-CN'
   })
 
+  // 文学分类状态
+  const [category, setCategory] = useState(() => {
+    return localStorage.getItem('category') || 'asian'
+  })
+
   // 认证状态
   const [user, setUser] = useState(() => {
     const saved = localStorage.getItem('user')
@@ -237,6 +333,20 @@ function App() {
     setUiLanguage(code)
     localStorage.setItem('uiLanguage', code)
   }
+
+  const changeCategory = (code) => {
+    setCategory(code)
+    localStorage.setItem('category', code)
+  }
+
+  // 应用区域主题
+  useEffect(() => {
+    const theme = CATEGORY_THEMES[category] || CATEGORY_THEMES.asian
+    const root = document.documentElement
+    Object.entries(theme).forEach(([key, value]) => {
+      root.style.setProperty(key, value)
+    })
+  }, [category])
 
   // 带认证的 API 请求封装
   const apiFetch = useCallback(async (url, options = {}) => {
@@ -287,7 +397,7 @@ function App() {
   }
 
   return (
-    <LanguageContext.Provider value={{ language: uiLanguage, setLanguage: changeLanguage, t }}>
+    <LanguageContext.Provider value={{ language: uiLanguage, setLanguage: changeLanguage, t, category, setCategory: changeCategory }}>
     <AuthContext.Provider value={authContextValue}>
       <div className="app">
         <header className="app-header">
@@ -299,6 +409,7 @@ function App() {
             </nav>
           </div>
           <div className="header-right">
+            <CategorySwitcher current={category} onChange={changeCategory} />
             <LanguageSwitcher current={uiLanguage} onChange={changeLanguage} />
             {isLoggedIn ? (
               <div className="user-menu">
@@ -331,6 +442,32 @@ function NavLink({ to, label }) {
     <Link to={to} className={`nav-link ${isActive ? 'active' : ''}`}>
       {label}
     </Link>
+  )
+}
+
+function CategorySwitcher({ current, onChange }) {
+  const [open, setOpen] = useState(false)
+  const currentCat = CATEGORIES.find(c => c.code === current) || CATEGORIES[0]
+
+  return (
+    <div className="language-switcher">
+      <button className="lang-btn" onClick={() => setOpen(!open)} title="选择文学分类">
+        {currentCat.flag} {currentCat.label}
+      </button>
+      {open && (
+        <div className="lang-dropdown">
+          {CATEGORIES.map(cat => (
+            <button
+              key={cat.code}
+              className={`lang-option ${cat.code === current ? 'selected' : ''}`}
+              onClick={() => { onChange(cat.code); setOpen(false) }}
+            >
+              {cat.flag} {cat.label} <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>{cat.en_label}</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
   )
 }
 

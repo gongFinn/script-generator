@@ -1,7 +1,8 @@
 """数据库配置和会话管理"""
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker, declarative_base
 import os
+import json
 from pathlib import Path
 
 # 数据库路径：优先使用环境变量，否则使用相对路径（兼容本地和云端）
@@ -17,9 +18,23 @@ if DATABASE_URL.startswith("sqlite:///"):
         if db_dir and not os.path.exists(db_dir):
             Path(db_dir).mkdir(parents=True, exist_ok=True)
 
-# SQLite需要check_same_thread=False用于多线程
+# SQLite需要check_same_thread=False，并显式设置UTF-8编码
 connect_args = {"check_same_thread": False} if "sqlite" in DATABASE_URL else {}
-engine = create_engine(DATABASE_URL, connect_args=connect_args, echo=False)
+engine = create_engine(
+    DATABASE_URL,
+    connect_args=connect_args,
+    echo=False,
+    json_serializer=lambda obj: json.dumps(obj, ensure_ascii=False),
+)
+# 确保SQLite连接使用UTF-8
+from sqlalchemy import event
+if "sqlite" in DATABASE_URL:
+    @event.listens_for(engine, "connect")
+    def set_sqlite_pragma(dbapi_connection, connection_record):
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA encoding='UTF-8'")
+        cursor.execute("PRAGMA journal_mode=WAL")
+        cursor.close()
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()

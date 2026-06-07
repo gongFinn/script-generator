@@ -1,15 +1,16 @@
 import React, { useState, useContext, useRef, useCallback, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { LanguageContext, LANGUAGES, AuthContext, API_BASE } from '../App'
+import { LanguageContext, LANGUAGES, CATEGORIES, AuthContext, API_BASE } from '../App'
 
 export default function HomePage() {
-  const { t, language: uiLang } = useContext(LanguageContext)
+  const { t, language: uiLang, category, setCategory } = useContext(LanguageContext)
   const { isLoggedIn, apiFetch } = useContext(AuthContext)
   const navigate = useNavigate()
 
   const [text, setText] = useState('')
   const [title, setTitle] = useState('')
   const [outputLanguage, setOutputLanguage] = useState('zh-CN')
+  const [outputCategory, setOutputCategory] = useState(category || 'asian')
   const [loading, setLoading] = useState(false)
   const [result, setResult] = useState(null)
   const [error, setError] = useState('')
@@ -138,6 +139,7 @@ export default function HomePage() {
           text: text.trim(),
           title: title.trim() || undefined,
           language: outputLanguage,
+          category: outputCategory,
         }),
       })
 
@@ -173,6 +175,7 @@ export default function HomePage() {
           text: text.trim(),
           title: title.trim() || undefined,
           language: outputLanguage,
+          category: outputCategory,
         }),
       })
 
@@ -314,6 +317,20 @@ export default function HomePage() {
                 {LANGUAGES.map(lang => (
                   <option key={lang.code} value={lang.code}>
                     {lang.flag} {lang.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="form-group">
+              <label>文学分类</label>
+              <select
+                className="select"
+                value={outputCategory}
+                onChange={e => { setOutputCategory(e.target.value); setCategory(e.target.value) }}
+              >
+                {CATEGORIES.map(cat => (
+                  <option key={cat.code} value={cat.code}>
+                    {cat.flag} {cat.label}
                   </option>
                 ))}
               </select>

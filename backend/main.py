@@ -5,10 +5,10 @@ import re
 from dotenv import load_dotenv
 load_dotenv()  # 加载 .env 文件中的环境变量
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, Depends, HTTPException, Query, UploadFile, File
+from fastapi import FastAPI, Depends, HTTPException, Query, UploadFile, File, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, Response
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, Field
 from typing import Optional, List
@@ -80,12 +80,24 @@ app.add_middleware(
 )
 
 
+# UTF-8 编码中间件 — 确保所有响应使用 UTF-8
+@app.middleware("http")
+async def add_utf8_header(request: Request, call_next):
+    response = await call_next(request)
+    if "application/json" in response.headers.get("content-type", ""):
+        response.headers["content-type"] = "application/json; charset=utf-8"
+    elif "text/html" in response.headers.get("content-type", ""):
+        response.headers["content-type"] = "text/html; charset=utf-8"
+    return response
+
+
 # ==================== Pydantic 模型 ====================
 
 class ConvertRequest(BaseModel):
     text: str = Field(..., min_length=50, description="要转换的原文内容")
     title: Optional[str] = Field(None, description="剧本标题")
     language: str = Field("zh-CN", description="输出语言代码：zh-CN, en, zh-TW")
+    category: str = Field("asian", description="文学分类：asian/european/american/other")
 
 
 class ScriptUpdateRequest(BaseModel):
@@ -106,6 +118,7 @@ class ScriptResponse(BaseModel):
     original_text: str
     script_content: Optional[str]
     language: str
+    category: Optional[str] = "asian"
     characters_json: Optional[str]
     created_at: Optional[str]
     updated_at: Optional[str]
@@ -307,6 +320,7 @@ async def upload_and_convert(
     file: UploadFile = File(..., description="要上传的文本文件 (.txt 或 .docx)"),
     title: Optional[str] = Query(None, description="剧本标题"),
     language: str = Query("zh-CN", description="输出语言代码：zh-CN, en, zh-TW"),
+    category: str = Query("asian", description="文学分类：asian/european/american/other"),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_user),
 ):
@@ -339,6 +353,7 @@ async def upload_and_convert(
         original_text=text,
         script_content=script_content,
         language=language,
+        category=category,
         characters_json=characters_json,
     )
     db.add(script)
@@ -369,6 +384,7 @@ async def convert_to_script(request: ConvertRequest, db: Session = Depends(get_d
         original_text=request.text,
         script_content=script_content,
         language=request.language,
+        category=request.category,
         characters_json=characters_json,
     )
     db.add(script)

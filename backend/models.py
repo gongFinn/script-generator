@@ -37,6 +37,7 @@ class Script(Base):
     original_text = Column(Text, nullable=False)
     script_content = Column(Text, nullable=True)
     language = Column(String(20), nullable=False, default="zh-CN")
+    category = Column(String(50), nullable=False, default="asian")  # 文学分类: asian/european/american/other
     characters_json = Column(Text, nullable=True)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc),
@@ -52,6 +53,7 @@ class Script(Base):
             "original_text": self.original_text,
             "script_content": self.script_content,
             "language": self.language,
+            "category": self.category,
             "characters_json": self.characters_json,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
