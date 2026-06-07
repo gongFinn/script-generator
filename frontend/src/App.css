@@ -642,6 +642,176 @@ a { color: inherit; text-decoration: none; }
 .lang-option:hover { background: rgba(184,134,11,0.08); }
 .lang-option.selected { background: rgba(184,134,11,0.12); color: var(--gold); font-weight: 600; }
 
+/* ==================== 剧本阅读视图 ==================== */
+.script-rendered-wrapper {
+  background: var(--paper-light);
+  border-radius: var(--radius);
+}
+
+.rendered-characters {
+  margin-bottom: 28px;
+  padding-bottom: 20px;
+  border-bottom: 2px solid var(--border);
+}
+
+.rendered-section-title {
+  font-size: 16px;
+  color: var(--vermillion);
+  margin-bottom: 14px;
+  letter-spacing: 2px;
+  padding-left: 8px;
+  border-left: 4px solid var(--vermillion);
+}
+
+.rendered-chars-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 12px;
+}
+
+.rendered-char-card {
+  background: linear-gradient(135deg, var(--paper), var(--paper-light));
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius);
+  padding: 14px 18px;
+}
+.char-name {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--ink);
+  margin-bottom: 4px;
+}
+.char-role {
+  font-size: 11px;
+  padding: 1px 8px;
+  background: rgba(184,134,11,0.15);
+  border-radius: 10px;
+  margin-left: 6px;
+  color: var(--gold);
+}
+.char-desc {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-top: 4px;
+  line-height: 1.6;
+}
+
+/* 场景 */
+.rendered-scene {
+  margin-bottom: 28px;
+  padding: 20px 24px;
+  background: linear-gradient(180deg, rgba(184,134,11,0.04), transparent);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-lg);
+}
+.scene-heading {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 14px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border-light);
+}
+.scene-number {
+  background: var(--vermillion);
+  color: #fff;
+  padding: 2px 12px;
+  border-radius: 3px;
+  font-size: 13px;
+  font-weight: 700;
+}
+.scene-chapter {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--indigo);
+  flex: 1;
+}
+.scene-location {
+  font-size: 13px;
+  color: var(--text-secondary);
+  padding: 2px 10px;
+  background: rgba(0,0,0,0.04);
+  border-radius: 3px;
+}
+.scene-time {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.scene-desc {
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.8;
+  margin-bottom: 16px;
+  padding: 10px 14px;
+  background: rgba(0,0,0,0.02);
+  border-radius: var(--radius);
+  font-style: italic;
+}
+.scene-beats {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* 台词 */
+.beat-dialogue {
+  padding: 8px 14px;
+  border-left: 3px solid var(--vermillion);
+  background: rgba(196,30,58,0.03);
+  margin: 2px 0;
+  line-height: 1.8;
+}
+.beat-character {
+  font-weight: 700;
+  color: var(--indigo);
+  font-size: 14px;
+}
+.beat-emotion {
+  font-size: 11px;
+  color: var(--vermillion);
+  margin: 0 4px;
+}
+.beat-delivery {
+  font-size: 11px;
+  color: var(--gold);
+}
+.beat-colon {
+  color: var(--text-muted);
+  margin: 0 2px;
+}
+.beat-line {
+  font-size: 14px;
+  color: var(--text);
+}
+
+/* 动作 */
+.beat-action {
+  padding: 6px 14px;
+  border-left: 3px solid var(--gold-light);
+  background: rgba(184,134,11,0.04);
+  margin: 2px 0;
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.7;
+}
+.beat-action .beat-character {
+  font-weight: 600;
+  color: var(--text);
+}
+.beat-emotion-tag {
+  font-size: 11px;
+  color: var(--vermillion);
+  margin-right: 6px;
+}
+
+/* 备注 */
+.beat-note {
+  padding: 6px 14px;
+  font-size: 12px;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
 /* ==================== 响应式 ==================== */
 @media (max-width: 768px) {
   .app-header { padding: 0 14px; }

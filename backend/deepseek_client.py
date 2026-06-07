@@ -297,7 +297,27 @@ async def call_deepseek(
 async def generate_script(text: str, language: str = "zh-CN") -> Optional[str]:
     """将文本转化为剧本"""
     system_prompt = SYSTEM_PROMPTS.get(language, SYSTEM_PROMPTS["zh-CN"])
-    return await call_deepseek(system_prompt, text, temperature=0.8, max_tokens=8192)
+    result = await call_deepseek(system_prompt, text, temperature=0.8, max_tokens=8192)
+    if result:
+        result = _clean_yaml_response(result)
+    return result
+
+
+def _clean_yaml_response(text: str) -> str:
+    """清理AI响应：去掉markdown代码块标记，只保留纯YAML"""
+    text = text.strip()
+    # 去掉开头的 ```yaml 或 ```yml 或 ```
+    if text.startswith("```"):
+        first_newline = text.find("\n")
+        if first_newline != -1:
+            text = text[first_newline + 1:]
+    # 去掉结尾的 ```
+    if text.endswith("```"):
+        text = text[:-3].rstrip()
+    # 如果开头还有 ```（没有语言标记的情况）
+    if text.startswith("```"):
+        text = text[3:].lstrip()
+    return text.strip()
 
 
 async def extract_character_lines(script_content: str, character_name: str, language: str = "zh-CN") -> Optional[str]:

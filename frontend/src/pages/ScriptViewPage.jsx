@@ -1,6 +1,145 @@
-import React, { useState, useEffect, useContext } from 'react'
+import React, { useState, useEffect, useContext, useMemo } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import { LanguageContext, AuthContext, API_BASE } from '../App'
+
+// YAML 解析器 — 将YAML剧本转为可读的HTML
+function renderScript(yamlContent) {
+  if (!yamlContent) return null
+  const lines = yamlContent.split('\n')
+  const sections = []
+  let currentSection = null
+  let currentBeat = null
+  let inCharacters = false
+  let inScenes = false
+  let sceneIndex = 0
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]
+    const indent = line.search(/\S/)
+    const trimmed = line.trim()
+
+    if (trimmed.startsWith('#') || trimmed === '') continue
+    if (trimmed === 'script:' || trimmed === 'meta:' || trimmed === 'scenes:' || trimmed === 'beats:' || trimmed.startsWith('transition:')) continue
+
+    // 角色段落
+    if (trimmed === 'characters:') {
+      inCharacters = true; inScenes = false
+      sections.push({ type: 'characters_header' })
+      continue
+    }
+    if (inCharacters && indent === 4 && trimmed.startsWith('- id:')) {
+      currentSection = { type: 'character', name: '', role: '', desc: '', lines: [] }
+      sections.push(currentSection)
+    }
+    if (inCharacters && currentSection && indent === 6) {
+      if (trimmed.startsWith('name:')) currentSection.name = trimmed.split('"')[1] || trimmed.split(':')[1]?.trim() || ''
+      if (trimmed.startsWith('role:')) currentSection.role = trimmed.split('"')[1] || trimmed.split(':')[1]?.trim() || ''
+      if (trimmed.startsWith('description:')) currentSection.desc = trimmed.split('"')[1] || trimmed.split(':')[1]?.trim() || ''
+    }
+
+    // 场景
+    if (trimmed.startsWith('- id:') && indent === 4 && inCharacters === false) {
+      inScenes = true
+      sceneIndex++
+      currentSection = { type: 'scene', id: sceneIndex, chapter: '', location: '', time: '', desc: '', beats: [] }
+      sections.push(currentSection)
+    }
+    if (inScenes && currentSection && indent >= 6 && currentSection.type === 'scene') {
+      if (trimmed.startsWith('chapter:')) currentSection.chapter = trimmed.split('"')[1] || ''
+      if (trimmed.startsWith('location:')) currentSection.location = trimmed.split('"')[1] || ''
+      if (trimmed.startsWith('time:')) currentSection.time = trimmed.split('"')[1] || ''
+      if (trimmed.startsWith('description:') && indent === 6) currentSection.desc = trimmed.split('|')[1]?.trim() || trimmed.split('"')[1] || ''
+      if (trimmed === 'description:' && lines[i+1]?.trim().startsWith('|')) {
+        // multiline description
+      }
+    }
+
+    // Beat
+    if (inScenes && currentSection && indent >= 8 && trimmed.startsWith('- id:')) {
+      currentBeat = { type: '', character: '', text: '', emotion: '', delivery: '' }
+      currentSection.beats.push(currentBeat)
+    }
+    if (currentBeat && indent >= 10) {
+      if (trimmed.startsWith('type:')) currentBeat.type = trimmed.split('"')[1] || ''
+      if (trimmed.startsWith('character:')) currentBeat.character = trimmed.split('"')[1] || ''
+      if (trimmed.startsWith('line:')) currentBeat.text = trimmed.split('"')[1] || ''
+      if (trimmed.startsWith('action:')) currentBeat.text = trimmed.split('"')[1] || ''
+      if (trimmed.startsWith('emotion:')) currentBeat.emotion = trimmed.split('"')[1] || ''
+      if (trimmed.startsWith('delivery:')) currentBeat.delivery = trimmed.split('"')[1] || ''
+    }
+
+    // 遇到下一个顶级键时重置
+    if (indent === 2 && trimmed.endsWith(':') && !['characters:', 'scenes:', 'beats:'].includes(trimmed)) {
+      inCharacters = false
+    }
+  }
+
+  return (
+    <div className="script-rendered">
+      {sections.map((sec, i) => {
+        if (sec.type === 'characters_header') {
+          const chars = sections.filter(s => s.type === 'character')
+          if (!chars.length) return null
+          return (
+            <div key={i} className="rendered-characters">
+              <h3 className="rendered-section-title">🎭 角色列表</h3>
+              <div className="rendered-chars-grid">
+                {chars.map((c, j) => (
+                  <div key={j} className="rendered-char-card">
+                    <div className="char-name">{c.name} <span className="char-role">{c.role}</span></div>
+                    {c.desc && <div className="char-desc">{c.desc}</div>}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )
+        }
+        if (sec.type === 'scene') {
+          return (
+            <div key={i} className="rendered-scene">
+              <div className="scene-heading">
+                <span className="scene-number">第{sec.id}场</span>
+                {sec.chapter && <span className="scene-chapter">{sec.chapter}</span>}
+                <span className="scene-location">{sec.location}</span>
+                <span className="scene-time">{sec.time}</span>
+              </div>
+              {sec.desc && <div className="scene-desc">{sec.desc}</div>}
+              <div className="scene-beats">
+                {sec.beats.map((beat, k) => {
+                  if (beat.type === 'dialogue') {
+                    return (
+                      <div key={k} className="beat-dialogue">
+                        <span className="beat-character">{beat.character}</span>
+                        {beat.emotion && <span className="beat-emotion">【{beat.emotion}】</span>}
+                        {beat.delivery && <span className="beat-delivery">（{beat.delivery}）</span>}
+                        <span className="beat-colon">：</span>
+                        <span className="beat-line">{beat.text}</span>
+                      </div>
+                    )
+                  }
+                  if (beat.type === 'action') {
+                    return (
+                      <div key={k} className="beat-action">
+                        {beat.emotion && <span className="beat-emotion-tag">【{beat.emotion}】</span>}
+                        <span className="beat-character">{beat.character}</span>
+                        <span>（{beat.text}）</span>
+                      </div>
+                    )
+                  }
+                  if (beat.type === 'note') {
+                    return <div key={k} className="beat-note">📝 {beat.text || beat.emotion || '舞台备注'}</div>
+                  }
+                  return null
+                })}
+              </div>
+            </div>
+          )
+        }
+        return null
+      })}
+    </div>
+  )
+}
 
 export default function ScriptViewPage() {
   const { id } = useParams()
@@ -13,6 +152,7 @@ export default function ScriptViewPage() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [activeTab, setActiveTab] = useState('view')
+  const [viewMode, setViewMode] = useState('formatted') // 'formatted' | 'yaml'
   const [editContent, setEditContent] = useState('')
   const [editTitle, setEditTitle] = useState('')
   const [toast, setToast] = useState(null)
@@ -209,7 +349,21 @@ export default function ScriptViewPage() {
 
       {/* 预览 */}
       {activeTab === 'view' && (
-        <div className="card"><div className="script-display">{script.script_content || '暂无内容'}</div></div>
+        <div className="card">
+          <div style={{ display: 'flex', gap: 8, marginBottom: 14, justifyContent: 'flex-end' }}>
+            <button className={`btn btn-sm ${viewMode === 'formatted' ? 'btn-primary' : 'btn-outline'}`}
+              onClick={() => setViewMode('formatted')}>📖 阅读视图</button>
+            <button className={`btn btn-sm ${viewMode === 'yaml' ? 'btn-primary' : 'btn-outline'}`}
+              onClick={() => setViewMode('yaml')}>📝 YAML源码</button>
+          </div>
+          {viewMode === 'formatted' ? (
+            <div className="script-rendered-wrapper">
+              {renderScript(script.script_content) || <div className="script-display">{script.script_content}</div>}
+            </div>
+          ) : (
+            <div className="script-display">{script.script_content || '暂无内容'}</div>
+          )}
+        </div>
       )}
 
       {/* 编辑（含辅助选项） */}
