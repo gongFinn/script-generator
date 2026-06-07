@@ -479,8 +479,43 @@ export default function HomePage() {
           </div>
           <div>
             {renderScriptPreview(result.script_content) || (
-              <div className="script-preview" style={{ whiteSpace: 'pre-wrap', fontFamily: 'inherit' }}>
-                {result.script_content}
+              <div style={{ whiteSpace: 'pre-wrap', fontFamily: 'inherit', fontSize: 14, lineHeight: 2.2, padding: 16 }}>
+                {/* 兜底：去掉YAML标记符号，显示为可读文本 */}
+                {result.script_content
+                  .replace(/```\w*\n?/g, '')
+                  .replace(/^\s*- id:\s*"[^"]*"/gm, '')
+                  .replace(/^\s*type:\s*"/gm, '')
+                  .replace(/^\s*character:\s*"/gm, '')
+                  .replace(/^\s*(emotion|delivery|notes):\s*"/gm, '')
+                  .replace(/^\s{2,}\w+:\s*"/gm, '  ')
+                  .replace(/"\s*$/gm, '')
+                  .replace(/^\s{4,}-/gm, '')
+                  .replace(/script:\s*/g, '')
+                  .replace(/meta:\s*/g, '')
+                  .replace(/characters:\s*/g, '【角色列表】\n')
+                  .replace(/scenes:\s*/g, '\n【剧本正文】\n')
+                  .replace(/heading:\s*/g, '')
+                  .replace(/beats:\s*/g, '')
+                  .replace(/entrance_timing:\s*/g, '')
+                  .replace(/transition:\s*/g, '')
+                  .replace(/aliases:\s*\[.*\]/g, '')
+                  .replace(/^\s*- character:\s*/gm, '🎬 ')
+                  .replace(/^\s*timing:\s*/gm, '   上场: ')
+                  .replace(/^\s*line:\s*/gm, '   💬 ')
+                  .replace(/^\s*action:\s*/gm, '   🎯 ')
+                  .replace(/^\s*location:\s*/gm, '📍 ')
+                  .replace(/^\s*time:\s*/gm, '🕐 ')
+                  .replace(/^\s*chapter:\s*/gm, '📖 ')
+                  .replace(/^\s*description:\s*/gm, '\n')
+                  .replace(/^\s*season:\s*/gm, '🌸 ')
+                  .replace(/^\s*title:\s*/gm, '')
+                  .replace(/^\s*source:\s*/gm, '')
+                  .replace(/^\s*gender:\s*/gm, '')
+                  .replace(/^\s*age:\s*/gm, '')
+                  .replace(/^\s*role:\s*/gm, '')
+                  .replace(/^\s*to:\s*/gm, '→ ')
+                  .substring(0, 3000)
+                }
               </div>
             )}
           </div>

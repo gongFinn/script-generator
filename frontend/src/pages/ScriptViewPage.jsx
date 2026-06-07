@@ -272,6 +272,100 @@ function renderScript(yamlContent) {
   )
 }
 
+// ==================== 兜底渲染：将YAML源码转为可读文本 ====================
+function fallbackRender(text) {
+  if (!text) return <div className="script-display">暂无内容</div>
+  // 清理YAML标记，转为可读文本
+  const lines = text.split('\n')
+  const output = []
+  let currentSection = null
+
+  for (const line of lines) {
+    const trimmed = line.trim()
+    if (!trimmed || trimmed.startsWith('#') || trimmed === 'script:') continue
+
+    // 元数据和标题
+    if (trimmed.startsWith('title:')) output.push(<h3 key={output.length} style={{ color: 'var(--vermillion)', fontSize: 18, marginBottom: 4 }}>{extractVal(trimmed)}</h3>)
+    else if (trimmed.startsWith('source:')) output.push(<div key={output.length} style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 12 }}>原著：{extractVal(trimmed)}</div>)
+
+    // 角色段落
+    else if (trimmed === 'characters:') output.push(<h4 key={output.length} className="rendered-section-title">🎭 角色列表</h4>)
+    else if (trimmed.startsWith('name:') && line.search(/\S/) === 6) output.push(
+      <div key={output.length} className="rendered-char-card" style={{ marginBottom: 8, display: 'inline-block', marginRight: 8 }}>
+        <span className="char-name">{extractVal(trimmed)}</span>
+      </div>
+    )
+    else if (trimmed.startsWith('role:')) {/* skip - shown with name */}
+
+    // 场景
+    else if (trimmed.startsWith('chapter:')) {
+      currentSection = 'scene'
+      output.push(<div key={output.length} className="scene-heading" style={{ marginTop: 16 }}>
+        <span className="scene-number">📖</span>
+        <span className="scene-chapter">{extractVal(trimmed)}</span>
+      </div>)
+    }
+    else if (trimmed.startsWith('location:')) output.push(<span key={output.length} className="scene-location">{extractVal(trimmed)}</span>)
+    else if (trimmed.startsWith('time:')) output.push(<span key={output.length} className="scene-time"> · {extractVal(trimmed)}</span>)
+    else if (trimmed.startsWith('description:') && !trimmed.includes('characters_present')) {
+      output.push(<div key={output.length} className="scene-desc">{extractVal(trimmed)}</div>)
+    }
+
+    // 对话
+    else if (trimmed.startsWith('type:') && extractVal(trimmed) === 'dialogue') currentSection = 'dialogue'
+    else if (trimmed.startsWith('type:') && extractVal(trimmed) === 'action') currentSection = 'action'
+    else if (trimmed.startsWith('character:') && currentSection === 'dialogue') output.push(
+      <div key={output.length} className="beat-dialogue"><span className="beat-character">{extractVal(trimmed)}</span>
+    )
+    else if (trimmed.startsWith('line:')) output.push(
+      <span key={output.length}><span className="beat-colon">：</span><span className="beat-line">{extractVal(trimmed)}</span></div>
+    )
+    else if (trimmed.startsWith('emotion:') && currentSection === 'dialogue') output.push(
+      <span key={output.length} className="beat-emotion">【{extractVal(trimmed)}】</span>
+    )
+    else if (trimmed.startsWith('delivery:')) output.push(
+      <span key={output.length} className="beat-delivery">（{extractVal(trimmed)}）</span>
+    )
+
+    // 动作
+    else if (trimmed.startsWith('character:') && currentSection === 'action') output.push(
+      <div key={output.length} className="beat-action"><span className="beat-character">{extractVal(trimmed)}</span>
+    )
+    else if (trimmed.startsWith('action:')) output.push(
+      <span key={output.length}>（{extractVal(trimmed)}）</span></div>
+    )
+    else if (trimmed.startsWith('emotion:') && currentSection === 'action') output.push(
+      <span key={output.length} className="beat-emotion-tag">【{extractVal(trimmed)}】</span>
+    )
+
+    // 转场
+    else if (trimmed.startsWith('to:') && line.search(/\S/) === 8) output.push(
+      <div key={output.length} style={{ fontSize: 11, color: 'var(--text-muted)', textAlign: 'right', marginTop: 8 }}>
+        🔄 → {extractVal(trimmed) === 'end' ? '剧终' : extractVal(trimmed)}
+      </div>
+    )
+
+    // 描述文本（顶格缩进的一般描述）
+    else if (line.search(/\S/) >= 8 && trimmed && !trimmed.startsWith('-') && !trimmed.includes(':')) {
+      // 可能是多行描述的一部分，跳过
+    }
+  }
+
+  if (output.length === 0) {
+    // 完全无法解析，显示纯文本
+    return <div style={{ whiteSpace: 'pre-wrap', fontFamily: 'inherit', fontSize: 14, lineHeight: 2, padding: 20 }}>{text}</div>
+  }
+
+  return <div style={{ padding: 16 }}>{output}</div>
+}
+
+function extractVal(line) {
+  const m = line.match(/"([^"]*)"/)
+  if (m) return m[1]
+  const idx = line.indexOf(':')
+  return idx >= 0 ? line.substring(idx + 1).trim().replace(/^"/, '').replace(/"$/, '') : line
+}
+
 // ==================== 主组件 ====================
 export default function ScriptViewPage() {
   const { id } = useParams()
@@ -525,7 +619,7 @@ export default function ScriptViewPage() {
       {activeTab === 'view' && (
         <div className="card">
           <div className="script-rendered-wrapper">
-            {renderScript(script.script_content) || <div className="script-display">{script.script_content}</div>}
+            {renderScript(script.script_content) || fallbackRender(script.script_content)}
           </div>
           <div style={{ marginTop: 14, textAlign: 'right' }}>
             <button className="btn btn-outline btn-sm" onClick={() => setShowYaml(true)}>📝 查看YAML源码</button>
