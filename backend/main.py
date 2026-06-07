@@ -23,6 +23,7 @@ from deepseek_client import (
     extract_character_lines,
     rename_character_in_script,
     extract_characters_from_script,
+    summarize_script,
 )
 
 # 前端构建目录 - 多种方式探测以确保正确找到
@@ -558,6 +559,108 @@ async def re_extract_characters(script_id: int, db: Session = Depends(get_db),
             pass
 
     return {"script_id": script_id, "characters": characters}
+
+
+@app.post("/api/scripts/{script_id}/summarize")
+async def summarize_script_endpoint(script_id: int, db: Session = Depends(get_db),
+                                    current_user: User = Depends(require_user)):
+    """AI智能摘要剧本：章节、人物、场景、事件"""
+    script = db.query(Script).filter(Script.id == script_id, Script.user_id == current_user.id).first()
+    if not script:
+        raise HTTPException(status_code=404, detail="剧本不存在")
+    if not script.script_content:
+        raise HTTPException(status_code=400, detail="剧本内容为空")
+
+    result = await summarize_script(script.script_content, script.language)
+    if not result:
+        raise HTTPException(status_code=500, detail="AI摘要生成失败，请稍后重试")
+
+    # Strip markdown fences if present
+    clean_result = result.strip()
+    if clean_result.startswith("```"):
+        clean_result = re.sub(r'^```\w*\n?', '', clean_result)
+        clean_result = re.sub(r'\n?```$', '', clean_result)
+        clean_result = clean_result.strip()
+    try:
+        parsed = json.loads(clean_result)
+        return {"script_id": script_id, "summary": parsed}
+    except json.JSONDecodeError:
+        return {"script_id": script_id, "summary_raw": result}
+
+
+# ==================== 自定义角色管理 ====================
+
+class CustomCharacterRequest(BaseModel):
+    name: str = Field(..., description="角色名")
+    aliases: Optional[List[str]] = Field(default=[], description="别名")
+    gender: Optional[str] = Field("其他", description="性别")
+    age: Optional[str] = Field("", description="年龄")
+    role: Optional[str] = Field("配角", description="角色类型")
+    description: Optional[str] = Field("", description="角色描述")
+    personality: Optional[str] = Field("", description="性格")
+    appearance: Optional[str] = Field("", description="外貌")
+    dialogue_lines: Optional[List[dict]] = Field(default=[], description="自定义台词")
+    actions: Optional[List[dict]] = Field(default=[], description="自定义动作")
+    scene_appearances: Optional[List[dict]] = Field(default=[], description="出场场景")
+    motivation: Optional[str] = Field("", description="角色动机")
+    notes: Optional[str] = Field("", description="备注")
+
+
+@app.post("/api/scripts/{script_id}/custom-character")
+async def add_custom_character(script_id: int, request: CustomCharacterRequest,
+                               db: Session = Depends(get_db),
+                               current_user: User = Depends(require_user)):
+    """向剧本中添加自定义角色"""
+    script = db.query(Script).filter(Script.id == script_id, Script.user_id == current_user.id).first()
+    if not script:
+        raise HTTPException(status_code=404, detail="剧本不存在")
+    if not script.script_content:
+        raise HTTPException(status_code=400, detail="剧本内容为空")
+
+    # 构建新角色的YAML片段
+    aliases = ', '.join(f'"{a}"' for a in request.aliases) if request.aliases else ''
+    yaml_char = f'''  - id: "custom_{request.name}"
+    name: "{request.name}"
+    aliases: [{aliases}]
+    gender: "{request.gender}"
+    age: "{request.age}"
+    role: "{request.role}"
+    description: "{request.description}"
+    personality: "{request.personality}"
+    appearance: "{request.appearance}"
+    motivation: "{request.motivation}"
+    notes: "{request.notes}"'''
+
+    # 将角色插入到characters列表末尾
+    import re
+    # 找到 characters: 段的结尾（下一个顶级键之前）
+    insert_marker = re.search(r'(^  characters:.*?\n)(?=^  \w+:)', script.script_content, re.MULTILINE | re.DOTALL)
+    if insert_marker:
+        chars_section = insert_marker.group(1)
+        new_chars = chars_section.rstrip() + '\n' + yaml_char + '\n'
+        new_content = script.script_content.replace(chars_section, new_chars)
+    else:
+        # Fallback: 追加到末尾
+        new_content = script.script_content + '\n' + yaml_char
+
+    script.script_content = new_content
+    script.updated_at = datetime.now(timezone.utc)
+
+    # 更新角色列表
+    if script.characters_json:
+        try:
+            chars = json.loads(script.characters_json)
+        except json.JSONDecodeError:
+            chars = []
+    else:
+        chars = []
+    if request.name not in chars:
+        chars.append(request.name)
+    script.characters_json = json.dumps(chars, ensure_ascii=False)
+
+    db.commit()
+    db.refresh(script)
+    return {"message": f"角色 {request.name} 已添加", "script": script.to_dict()}
 
 
 # ==================== 静态文件服务 ====================

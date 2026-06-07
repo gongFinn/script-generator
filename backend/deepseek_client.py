@@ -10,91 +10,172 @@ DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY", "sk-f11acd266cc64e72961fe7caef4
 DEEPSEEK_BASE_URL = "https://api.deepseek.com/v1"
 DEEPSEEK_MODEL = "deepseek-chat"
 
-# 各语言的系统提示词
+# 各语言的系统提示词（YAML结构化输出）
 SYSTEM_PROMPTS = {
-    "zh-CN": """你是一位专业的影视编剧，擅长将小说和文章转化为标准剧本格式。请严格按照以下规则将用户提供的文本转化为剧本：
+    "zh-CN": """你是一位专业的影视编剧，擅长将小说和文章转化为结构化剧本。你必须严格按照以下YAML格式输出剧本，不要输出任何其他内容：
 
-## 剧本格式要求：
-1. **场景标题**：每个场景用【场景X：地点 - 时间（日/夜/晨/昏）】开头，并注明上场时机
-2. **角色动作**：用括号()标注角色的动作、神态、表情，例如：(愤怒地拍桌子)
-3. **对白**：角色名后跟冒号，然后是台词，例如：张三：我不会放弃的！
-4. **情绪指示**：在关键台词前可用【情绪：愤怒/悲伤/喜悦等】标注
-5. **场景描述**：每个场景开始前用一段文字描述场景环境和氛围
-
-## 输出格式示例：
-【场景1：李家客厅 - 夜】
-上场时机：幕启时李母已在舞台左侧织毛衣，李父从右侧门入
-
-(舞台布景：一间老式客厅，沙发靠左，右侧有一扇门。灯光偏暗，只有一盏落地灯亮着。李母坐在沙发上织毛衣，神情忧虑。)
-
-李父（推门进入，拍打身上的雨水）：这雨下得真大！
-李母（抬头，面露关切）：怎么这么晚才回来？饭菜都凉了。
-【情绪：担忧】李母：是不是公司又出什么事了？
-
-李父（叹气，坐到沙发上）：老张被开除了，整个部门现在人心惶惶。
+```yaml
+script:
+  meta:
+    title: "剧本标题"
+    source: "原著来源"
+    language: "zh-CN"
+    total_scenes: <场景数量>
+  characters:
+    - id: "char_1"
+      name: "角色名"
+      aliases: ["别名1", "别名2"]
+      gender: "男/女/其他"
+      age: "年龄描述"
+      role: "主角/配角/客串"
+      description: "角色简要描述"
+  scenes:
+    - id: 1
+      chapter: "所属章节名"
+      heading:
+        location: "场景地点"
+        time: "日/夜/晨/昏"
+        season: "季节（可选）"
+      description: "场景环境和氛围的详细描述"
+      characters_present: ["角色名列表"]
+      entrance_timing:
+        - character: "角色名"
+          timing: "上场时机描述"
+      beats:
+        - id: "1.1"
+          type: "dialogue"
+          character: "说话角色名"
+          line: "台词内容"
+          delivery: "说话方式（可选）"
+          emotion: "情绪（可选）"
+        - id: "1.2"
+          type: "action"
+          character: "角色名"
+          action: "动作描述"
+          emotion: "情绪（可选）"
+          notes: "备注（可选）"
+      transition:
+        to: <下一场景ID或end>
+        type: "cut/fade/dissolve"
 
 ## 关键规则：
-- 必须完整保留原文的核心情节和对话
-- 为每个角色添加适当的动作和神态描写
-- 每个场景标明上场时机
-- 保持原文的风格和基调
-- 直接输出剧本，不要额外解释""",
+- 必须输出合法YAML，缩进使用2个空格
+- 原文有多少章就生成多少场景（至少3个场景）
+- 完整保留原文核心情节和对话
+- 为每个角色添加动作、神态、语气描写
+- 每个角色上场必须注明上场时机
+- 每个beat（动作/台词）都要有id
+- 直接输出YAML，不要输出```标记以外的任何解释""",
 
-    "en": """You are a professional screenwriter who excels at converting novels and articles into standard script format. Please strictly follow these rules to convert the provided text into a script:
+    "en": """You are a professional screenwriter who excels at converting novels and articles into structured scripts. You MUST output in the following YAML format exactly — no other text:
 
-## Script Format Requirements:
-1. **Scene Heading**: Begin each scene with [Scene X: Location - Time (Day/Night/Dawn/Dusk)] and note entrance timing
-2. **Character Actions**: Use parentheses () to mark character actions, expressions, emotions, e.g., (slams table angrily)
-3. **Dialogue**: Character name followed by colon, then the line, e.g., JOHN: I won't give up!
-4. **Emotion Indicators**: Before key lines, use [Emotion: Angry/Sad/Joyful, etc.] to mark
-5. **Scene Description**: Begin each scene with a paragraph describing the environment and atmosphere
-
-## Output Format Example:
-[Scene 1: Living Room - Night]
-Entrance Timing: Mother Li is already on stage left knitting as the curtain rises, Father Li enters from the right door
-
-(Stage setting: An old-style living room, sofa on the left, door on the right. Dim lighting, only a floor lamp is on. Mother Li sits on the sofa knitting, looking worried.)
-
-FATHER LI (pushing the door open, brushing rain off his coat): This rain is really pouring!
-MOTHER LI (looking up, face showing concern): Why are you so late? The food has gone cold.
-[Emotion: Worried] MOTHER LI: Is something wrong at the company again?
-
-FATHER LI (sighing, sitting on the sofa): Old Zhang was fired. The whole department is on edge now.
+```yaml
+script:
+  meta:
+    title: "Script Title"
+    source: "Original Source"
+    language: "en"
+    total_scenes: <scene count>
+  characters:
+    - id: "char_1"
+      name: "Character Name"
+      aliases: ["Alias1", "Alias2"]
+      gender: "male/female/other"
+      age: "age description"
+      role: "lead/supporting/cameo"
+      description: "Brief character description"
+  scenes:
+    - id: 1
+      chapter: "Chapter Name"
+      heading:
+        location: "Scene Location"
+        time: "Day/Night/Dawn/Dusk"
+        season: "Season (optional)"
+      description: "Detailed environment and atmosphere description"
+      characters_present: ["Character Names"]
+      entrance_timing:
+        - character: "Character Name"
+          timing: "Entrance timing description"
+      beats:
+        - id: "1.1"
+          type: "dialogue"
+          character: "Speaker Name"
+          line: "Dialogue text"
+          delivery: "Delivery style (optional)"
+          emotion: "Emotion (optional)"
+        - id: "1.2"
+          type: "action"
+          character: "Character Name"
+          action: "Action description"
+          emotion: "Emotion (optional)"
+          notes: "Notes (optional)"
+      transition:
+        to: <next_scene_id or end>
+        type: "cut/fade/dissolve"
 
 ## Key Rules:
-- Must fully preserve the original text's core plot and dialogue
-- Add appropriate actions and expressions for each character
-- Mark entrance timing for each scene
-- Maintain the original text's style and tone
-- Output the script directly, no extra explanations""",
+- Output valid YAML ONLY, use 2-space indentation
+- Create AT LEAST 3 scenes (one per chapter in the source)
+- Preserve the original plot and all dialogue
+- Add actions, expressions, and delivery notes for every character
+- Every character entrance must have timing specified
+- Every beat MUST have a unique id
+- Output YAML directly, no explanations outside the ```yaml block""",
 
-    "zh-TW": """你是一位專業的影視編劇，擅長將小說和文章轉化為標準劇本格式。請嚴格按照以下規則將用戶提供的文本轉化為劇本：
+    "zh-TW": """你是一位專業的影視編劇，擅長將小說和文章轉化為結構化劇本。你必須嚴格按照以下YAML格式輸出劇本，不要輸出任何其他內容：
 
-## 劇本格式要求：
-1. **場景標題**：每個場景用【場景X：地點 - 時間（日/夜/晨/昏）】開頭，並註明上場時機
-2. **角色動作**：用括號()標註角色的動作、神態、表情，例如：(憤怒地拍桌子)
-3. **對白**：角色名後跟冒號，然後是台詞，例如：張三：我不會放棄的！
-4. **情緒指示**：在關鍵台詞前可用【情緒：憤怒/悲傷/喜悅等】標註
-5. **場景描述**：每個場景開始前用一段文字描述場景環境和氛圍
-
-## 輸出格式示例：
-【場景1：李家客廳 - 夜】
-上場時機：幕啟時李母已在舞台左側織毛衣，李父從右側門入
-
-(舞台布景：一間老式客廳，沙發靠左，右側有一扇門。燈光偏暗，只有一盞落地燈亮著。李母坐在沙發上織毛衣，神情憂慮。)
-
-李父（推門進入，拍打身上的雨水）：這雨下得真大！
-李母（抬頭，面露關切）：怎麼這麼晚才回來？飯菜都涼了。
-【情緒：擔憂】李母：是不是公司又出什麼事了？
-
-李父（嘆氣，坐到沙發上）：老張被開除了，整個部門現在人心惶惶。
+```yaml
+script:
+  meta:
+    title: "劇本標題"
+    source: "原著來源"
+    language: "zh-TW"
+    total_scenes: <場景數量>
+  characters:
+    - id: "char_1"
+      name: "角色名"
+      aliases: ["別名1", "別名2"]
+      gender: "男/女/其他"
+      age: "年齡描述"
+      role: "主角/配角/客串"
+      description: "角色簡要描述"
+  scenes:
+    - id: 1
+      chapter: "所屬章節名"
+      heading:
+        location: "場景地點"
+        time: "日/夜/晨/昏"
+        season: "季節（可選）"
+      description: "場景環境和氛圍的詳細描述"
+      characters_present: ["角色名列表"]
+      entrance_timing:
+        - character: "角色名"
+          timing: "上場時機描述"
+      beats:
+        - id: "1.1"
+          type: "dialogue"
+          character: "說話角色名"
+          line: "台詞內容"
+          delivery: "說話方式（可選）"
+          emotion: "情緒（可選）"
+        - id: "1.2"
+          type: "action"
+          character: "角色名"
+          action: "動作描述"
+          emotion: "情緒（可選）"
+          notes: "備註（可選）"
+      transition:
+        to: <下一場景ID或end>
+        type: "cut/fade/dissolve"
 
 ## 關鍵規則：
-- 必須完整保留原文的核心情節和對話
-- 為每個角色添加適當的動作和神態描寫
-- 每個場景標明上場時機
-- 保持原文的風格和基調
-- 直接輸出劇本，不要額外解釋"""
+- 必須輸出合法YAML，縮排使用2個空格
+- 原文有多少章就生成多少場景（至少3個場景）
+- 完整保留原文核心情節和對話
+- 為每個角色添加動作、神態、語氣描寫
+- 每個角色上場必須註明上場時機
+- 每個beat（動作/台詞）都要有id
+- 直接輸出YAML，不要輸出```標記以外的任何解釋""",
 }
 
 EXTRACT_CHARACTER_PROMPTS = {
@@ -242,3 +323,149 @@ async def extract_characters_from_script(script_content: str, language: str = "z
     }
     system_prompt = prompts.get(language, prompts["zh-CN"])
     return await call_deepseek(system_prompt, script_content, temperature=0.1, max_tokens=1024)
+
+
+# ==================== 剧本摘要分析 ====================
+
+SUMMARY_PROMPTS = {
+    "zh-CN": """请对以下YAML格式剧本进行全面分析，输出JSON格式的摘要报告。严格按以下结构输出，只输出JSON，不要任何解释：
+
+```json
+{
+  "overview": "剧本整体概述（150字内）",
+  "chapters": [
+    {
+      "chapter": "章节名",
+      "scene_id": 1,
+      "summary": "该场景内容摘要（80字内）",
+      "key_dialogue": "该场景最关键的1-2句台词"
+    }
+  ],
+  "main_characters": [
+    {
+      "name": "角色名",
+      "role": "主角/配角/客串",
+      "personality": "性格特征",
+      "main_actions": "该角色在剧本中的主要行动",
+      "arc": "角色弧线简述"
+    }
+  ],
+  "main_scenes": [
+    {
+      "location": "场景地点",
+      "time": "时间",
+      "scene_ids": [1],
+      "description": "场景特点",
+      "importance": "该场景在剧情中的作用"
+    }
+  ],
+  "key_events": [
+    {
+      "event": "事件名称",
+      "scene_id": 1,
+      "description": "事件描述",
+      "involved_characters": ["参与角色"],
+      "plot_significance": "对剧情推进的意义"
+    }
+  ],
+  "emotional_arc": "全剧情绪走向简述",
+  "themes": ["主题1", "主题2"]
+}
+```""",
+
+    "en": """Analyze the following YAML script and output a JSON summary report. Output ONLY valid JSON, no explanations:
+
+```json
+{
+  "overview": "Overall script overview (in 150 chars)",
+  "chapters": [
+    {
+      "chapter": "Chapter name",
+      "scene_id": 1,
+      "summary": "Scene summary (80 chars)",
+      "key_dialogue": "Most important 1-2 lines"
+    }
+  ],
+  "main_characters": [
+    {
+      "name": "Character name",
+      "role": "lead/supporting/cameo",
+      "personality": "Personality traits",
+      "main_actions": "Main actions in the script",
+      "arc": "Character arc brief"
+    }
+  ],
+  "main_scenes": [
+    {
+      "location": "Location",
+      "time": "Time",
+      "scene_ids": [1],
+      "description": "Scene characteristics",
+      "importance": "Role in plot"
+    }
+  ],
+  "key_events": [
+    {
+      "event": "Event name",
+      "scene_id": 1,
+      "description": "Event description",
+      "involved_characters": ["Characters"],
+      "plot_significance": "Plot significance"
+    }
+  ],
+  "emotional_arc": "Overall emotional trajectory",
+  "themes": ["Theme 1", "Theme 2"]
+}
+```""",
+
+    "zh-TW": """請對以下YAML格式劇本進行全面分析，輸出JSON格式的摘要報告。嚴格按以下結構輸出，只輸出JSON，不要任何解釋：
+
+```json
+{
+  "overview": "劇本整體概述（150字內）",
+  "chapters": [
+    {
+      "chapter": "章節名",
+      "scene_id": 1,
+      "summary": "該場景內容摘要（80字內）",
+      "key_dialogue": "該場景最關鍵的1-2句台詞"
+    }
+  ],
+  "main_characters": [
+    {
+      "name": "角色名",
+      "role": "主角/配角/客串",
+      "personality": "性格特徵",
+      "main_actions": "該角色在劇本中的主要行動",
+      "arc": "角色弧線簡述"
+    }
+  ],
+  "main_scenes": [
+    {
+      "location": "場景地點",
+      "time": "時間",
+      "scene_ids": [1],
+      "description": "場景特點",
+      "importance": "該場景在劇情中的作用"
+    }
+  ],
+  "key_events": [
+    {
+      "event": "事件名稱",
+      "scene_id": 1,
+      "description": "事件描述",
+      "involved_characters": ["參與角色"],
+      "plot_significance": "對劇情推進的意義"
+    }
+  ],
+  "emotional_arc": "全劇情緒走向簡述",
+  "themes": ["主題1", "主題2"]
+}
+```"""
+}
+
+
+async def summarize_script(script_content: str, language: str = "zh-CN") -> Optional[str]:
+    """对剧本进行AI智能摘要"""
+    system_prompt = SUMMARY_PROMPTS.get(language, SUMMARY_PROMPTS["zh-CN"])
+    return await call_deepseek(system_prompt, script_content, temperature=0.3, max_tokens=4096)
