@@ -22,7 +22,10 @@ function parseYamlScript(yamlText) {
 
     // 角色列表
     if (indent === 2 && trimmed === 'characters:') { inChars = true; inScenes = false; continue }
-    if (inChars && indent === 2 && trimmed !== 'characters:' && trimmed.endsWith(':')) { inChars = false; continue }
+    // 结束角色段的条件：遇到其他顶级key（但不是scenes因为它会被专门处理）
+    if (inChars && indent === 2 && trimmed.endsWith(':') && trimmed !== 'characters:' && trimmed !== 'scenes:') {
+      inChars = false; continue
+    }
     if (inChars && indent === 4 && trimmed.startsWith('- id:')) {
       currentChar = { id: strVal(trimmed), name: '', role: '', gender: '', age: '', description: '', aliases: [] }
       result.characters.push(currentChar)
