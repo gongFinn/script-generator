@@ -152,7 +152,7 @@ export default function ScriptViewPage() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [activeTab, setActiveTab] = useState('view')
-  const [viewMode, setViewMode] = useState('formatted') // 'formatted' | 'yaml'
+  const [showYaml, setShowYaml] = useState(false) // 是否显示YAML源码弹窗
   const [editContent, setEditContent] = useState('')
   const [editTitle, setEditTitle] = useState('')
   const [toast, setToast] = useState(null)
@@ -340,28 +340,36 @@ export default function ScriptViewPage() {
 
       {/* Tab导航 */}
       <div className="tabs">
-        <button className={`tab ${activeTab === 'view' ? 'active' : ''}`} onClick={() => setActiveTab('view')}>📖 预览</button>
-        <button className={`tab ${activeTab === 'edit' ? 'active' : ''}`} onClick={() => setActiveTab('edit')}>✏️ 编辑</button>
-        <button className={`tab ${activeTab === 'summary' ? 'active' : ''}`} onClick={() => { setActiveTab('summary'); if (!summary) handleSummarize() }}>📊 摘要</button>
-        <button className={`tab ${activeTab === 'characters' ? 'active' : ''}`} onClick={() => setActiveTab('characters')}>👤 角色</button>
+        <button className={`tab ${activeTab === 'view' ? 'active' : ''}`} onClick={() => setActiveTab('view')}>📖 阅读剧本</button>
+        <button className={`tab ${activeTab === 'edit' ? 'active' : ''}`} onClick={() => setActiveTab('edit')}>✏️ 编辑剧本</button>
+        <button className={`tab ${activeTab === 'summary' ? 'active' : ''}`} onClick={() => { setActiveTab('summary'); if (!summary) handleSummarize() }}>📊 智能摘要</button>
+        <button className={`tab ${activeTab === 'characters' ? 'active' : ''}`} onClick={() => setActiveTab('characters')}>👤 角色管理</button>
         <button className={`tab ${activeTab === 'creator' ? 'active' : ''}`} onClick={() => setActiveTab('creator')}>🎭 自定义角色</button>
       </div>
 
-      {/* 预览 */}
+      {/* 预览 — 默认显示格式化可读文本 */}
       {activeTab === 'view' && (
         <div className="card">
-          <div style={{ display: 'flex', gap: 8, marginBottom: 14, justifyContent: 'flex-end' }}>
-            <button className={`btn btn-sm ${viewMode === 'formatted' ? 'btn-primary' : 'btn-outline'}`}
-              onClick={() => setViewMode('formatted')}>📖 阅读视图</button>
-            <button className={`btn btn-sm ${viewMode === 'yaml' ? 'btn-primary' : 'btn-outline'}`}
-              onClick={() => setViewMode('yaml')}>📝 YAML源码</button>
+          <div className="script-rendered-wrapper">
+            {renderScript(script.script_content) || (
+              <div className="script-display">{script.script_content || '暂无内容'}</div>
+            )}
           </div>
-          {viewMode === 'formatted' ? (
-            <div className="script-rendered-wrapper">
-              {renderScript(script.script_content) || <div className="script-display">{script.script_content}</div>}
+          <div style={{ marginTop: 14, textAlign: 'right' }}>
+            <button className="btn btn-outline btn-sm" onClick={() => setShowYaml(true)}>📝 查看YAML源码</button>
+          </div>
+
+          {/* YAML 弹窗 */}
+          {showYaml && (
+            <div className="modal-overlay" onClick={() => setShowYaml(false)}>
+              <div className="modal" style={{ maxWidth: 800, maxHeight: '80vh', overflow: 'auto' }} onClick={e => e.stopPropagation()}>
+                <h3>📝 YAML 源码</h3>
+                <pre className="script-display" style={{ fontSize: 12, maxHeight: 500 }}>{script.script_content}</pre>
+                <div className="modal-actions">
+                  <button className="btn btn-outline" onClick={() => setShowYaml(false)}>关闭</button>
+                </div>
+              </div>
             </div>
-          ) : (
-            <div className="script-display">{script.script_content || '暂无内容'}</div>
           )}
         </div>
       )}
@@ -381,13 +389,22 @@ export default function ScriptViewPage() {
             ))}
           </div>
           <textarea className="script-editor" value={editContent}
-            onChange={e => setEditContent(e.target.value)} rows={22} />
+            onChange={e => setEditContent(e.target.value)} rows={18} />
           <div style={{ marginTop: 14, display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
             <button className="btn btn-outline" onClick={() => { setEditContent(script.script_content || ''); setEditTitle(script.title || '') }}>{t.cancel}</button>
             <button className="btn btn-primary" onClick={handleSave} disabled={saving}>
               {saving && <span className="spinner" />}{t.save}
             </button>
           </div>
+          {/* 编辑模式下也显示格式化预览 */}
+          <details style={{ marginTop: 20 }}>
+            <summary style={{ cursor: 'pointer', color: 'var(--text-secondary)', fontSize: 13, letterSpacing: 1 }}>
+              📖 点击预览格式化效果
+            </summary>
+            <div className="script-rendered-wrapper" style={{ marginTop: 12, padding: 16, background: 'var(--paper)', borderRadius: 'var(--radius)', border: '1px solid var(--border-light)' }}>
+              {renderScript(editContent) || <div style={{ color: 'var(--text-muted)', fontSize: 13 }}>无法解析当前内容</div>}
+            </div>
+          </details>
         </div>
       )}
 

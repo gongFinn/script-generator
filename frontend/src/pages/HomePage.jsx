@@ -2,6 +2,99 @@ import React, { useState, useContext, useRef, useCallback, useEffect } from 'rea
 import { useNavigate } from 'react-router-dom'
 import { LanguageContext, LANGUAGES, CATEGORIES, AuthContext, API_BASE } from '../App'
 
+// 简单的YAML剧本渲染器（与ScriptViewPage中的逻辑一致）
+function renderScriptPreview(yamlContent) {
+  if (!yamlContent) return null
+  const lines = yamlContent.split('\n')
+  const scenes = []
+  let currentScene = null
+  let currentBeat = null
+  let inCharacters = false
+  let inScenes = false
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]
+    const indent = line.search(/\S/)
+    const trimmed = line.trim()
+    if (trimmed.startsWith('#') || trimmed === '') continue
+
+    if (trimmed === 'characters:') { inCharacters = true; inScenes = false; continue }
+    if (inCharacters && indent === 2 && trimmed.endsWith(':') && trimmed !== 'characters:') { inCharacters = false }
+
+    // 场景检测
+    if (trimmed.startsWith('- id:') && indent === 4 && !inCharacters) {
+      inScenes = true
+      currentScene = { chapter: '', location: '', time: '', desc: '', beats: [] }
+      scenes.push(currentScene)
+    }
+    if (inScenes && currentScene && indent >= 6) {
+      if (trimmed.startsWith('chapter:')) currentScene.chapter = (trimmed.match(/"([^"]+)"/) || ['',''])[1]
+      if (trimmed.startsWith('location:')) currentScene.location = (trimmed.match(/"([^"]+)"/) || ['',''])[1]
+      if (trimmed.startsWith('time:')) currentScene.time = (trimmed.match(/"([^"]+)"/) || ['',''])[1]
+      if (trimmed.startsWith('description:')) {
+        const m = trimmed.match(/"([^"]+)"/)
+        if (m) currentScene.desc = m[1]
+      }
+    }
+
+    // Beat检测
+    if (inScenes && currentScene && indent >= 8 && trimmed.startsWith('- id:')) {
+      currentBeat = { type: '', character: '', text: '', emotion: '', delivery: '' }
+      currentScene.beats.push(currentBeat)
+    }
+    if (currentBeat && indent >= 10) {
+      const m = trimmed.match(/"([^"]+)"/)
+      const val = m ? m[1] : ''
+      if (trimmed.startsWith('type:')) currentBeat.type = val
+      if (trimmed.startsWith('character:')) currentBeat.character = val
+      if (trimmed.startsWith('line:')) currentBeat.text = val
+      if (trimmed.startsWith('action:')) currentBeat.text = val
+      if (trimmed.startsWith('emotion:')) currentBeat.emotion = val
+      if (trimmed.startsWith('delivery:')) currentBeat.delivery = val
+    }
+  }
+
+  if (!scenes.length) return null
+
+  return (
+    <div>
+      {scenes.map((scene, i) => (
+        <div key={i} style={{ marginBottom: 20, padding: '14px 18px', background: 'rgba(184,134,11,0.04)', border: '1px solid var(--border-light)', borderRadius: 8 }}>
+          <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 10, paddingBottom: 8, borderBottom: '1px solid var(--border-light)' }}>
+            <span style={{ background: 'var(--vermillion)', color: '#fff', padding: '1px 10px', borderRadius: 3, fontSize: 12, fontWeight: 700 }}>第{i+1}场</span>
+            {scene.chapter && <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--indigo)' }}>{scene.chapter}</span>}
+            <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{scene.location} · {scene.time}</span>
+          </div>
+          {scene.desc && <div style={{ fontSize: 12, color: 'var(--text-secondary)', fontStyle: 'italic', marginBottom: 10, lineHeight: 1.7 }}>{scene.desc}</div>}
+          {scene.beats.map((beat, j) => {
+            if (beat.type === 'dialogue') {
+              return (
+                <div key={j} style={{ padding: '5px 10px', borderLeft: '3px solid var(--vermillion)', margin: '3px 0', background: 'rgba(196,30,58,0.02)' }}>
+                  <span style={{ fontWeight: 700, color: 'var(--indigo)' }}>{beat.character}</span>
+                  {beat.emotion && <span style={{ fontSize: 10, color: 'var(--vermillion)', margin: '0 3px' }}>【{beat.emotion}】</span>}
+                  {beat.delivery && <span style={{ fontSize: 10, color: 'var(--gold)' }}>（{beat.delivery}）</span>}
+                  <span>：</span>
+                  <span>{beat.text}</span>
+                </div>
+              )
+            }
+            if (beat.type === 'action') {
+              return (
+                <div key={j} style={{ padding: '4px 10px', borderLeft: '3px solid var(--gold-light)', margin: '2px 0', fontSize: 12, color: 'var(--text-secondary)' }}>
+                  {beat.emotion && <span style={{ fontSize: 10, color: 'var(--vermillion)', marginRight: 4 }}>【{beat.emotion}】</span>}
+                  <span style={{ fontWeight: 600 }}>{beat.character}</span>
+                  <span>（{beat.text}）</span>
+                </div>
+              )
+            }
+            return null
+          })}
+        </div>
+      ))}
+    </div>
+  )
+}
+
 export default function HomePage() {
   const { t, language: uiLang, category, setCategory } = useContext(LanguageContext)
   const { isLoggedIn, apiFetch } = useContext(AuthContext)
@@ -384,8 +477,12 @@ export default function HomePage() {
               </button>
             </div>
           </div>
-          <div className="script-preview">
-            {result.script_content}
+          <div>
+            {renderScriptPreview(result.script_content) || (
+              <div className="script-preview" style={{ whiteSpace: 'pre-wrap', fontFamily: 'inherit' }}>
+                {result.script_content}
+              </div>
+            )}
           </div>
         </div>
       )}
