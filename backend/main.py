@@ -19,6 +19,12 @@ from database import get_db, init_db
 from models import Script, User
 from auth import hash_password, verify_password, create_access_token, get_current_user, require_user
 from deepseek_client import (
+    split_into_chapters,
+    convert_chapter,
+    merge_scenes_to_script,
+    extract_all_characters_from_scenes,
+    extract_chapter_from_script,
+    replace_chapter_in_script,
     generate_script,
     extract_character_lines,
     rename_character_in_script,
@@ -391,6 +397,139 @@ async def convert_to_script(request: ConvertRequest, db: Session = Depends(get_d
     db.commit()
     db.refresh(script)
     return script.to_dict()
+
+
+@app.post("/api/convert-long")
+async def convert_long_text(request: ConvertRequest, db: Session = Depends(get_db),
+                            current_user: User = Depends(require_user)):
+    """长篇分章转换"""
+    chapters = split_into_chapters(request.text, request.language)
+    if len(chapters) == 1:
+        return await convert_to_script(request, db, current_user)
+    scenes_yaml, errors = [], []
+    for i, ch in enumerate(chapters):
+        sy = await convert_chapter(i + 1, ch, request.language)
+        if sy: scenes_yaml.append(sy)
+        else: errors.append(f"第{i+1}章: {ch['chapter']}")
+    if not scenes_yaml:
+        raise HTTPException(status_code=500, detail="所有章节转换失败")
+    chars_yaml = await extract_all_characters_from_scenes(scenes_yaml, request.language) or "    []"
+    title = request.title or chapters[0]['chapter'][:30]
+    full = merge_scenes_to_script(scenes_yaml, chars_yaml, {"title": title, "source": title}, request.language)
+    cj = await extract_characters_from_script(full, request.language)
+    s = Script(user_id=current_user.id, title=title, original_text=request.text,
+               script_content=full, language=request.language, category=request.category, characters_json=cj)
+    db.add(s); db.commit(); db.refresh(s)
+    return {"script": s.to_dict(), "chapters_converted": len(scenes_yaml), "total_chapters": len(chapters), "errors": errors or None}
+
+
+@app.get("/api/scripts/{script_id}/chapters")
+def list_chapters(script_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_user)):
+    """列出剧本中的章节"""
+    script = db.query(Script).filter(Script.id == script_id, Script.user_id == current_user.id).first()
+    if not script or not script.script_content: raise HTTPException(status_code=404, detail="剧本不存在")
+    src = split_into_chapters(script.original_text, script.language)
+    sc = _re.findall(r'chapter:\s*"([^"]+)"', script.script_content)
+    return {"source_chapters": [c["chapter"] for c in src], "script_chapters": sc, "total": len(sc) or len(src)}
+
+
+@app.get("/api/scripts/{script_id}/chapters/{chapter_name}")
+def get_chapter(script_id: int, chapter_name: str, db: Session = Depends(get_db), current_user: User = Depends(require_user)):
+    """提取指定章节"""
+    script = db.query(Script).filter(Script.id == script_id, Script.user_id == current_user.id).first()
+    if not script: raise HTTPException(status_code=404, detail="剧本不存在")
+    cn = chapter_name.replace('%20', ' ')
+    ch = extract_chapter_from_script(script.script_content, cn)
+    if not ch: raise HTTPException(status_code=404, detail=f"未找到章节: {cn}")
+    return {"chapter": cn, "yaml": ch}
+
+
+@app.post("/api/scripts/{script_id}/chapters/{chapter_name}/reconvert")
+async def reconvert_chapter(script_id: int, chapter_name: str, db: Session = Depends(get_db), current_user: User = Depends(require_user)):
+    """重新转换指定章节"""
+    script = db.query(Script).filter(Script.id == script_id, Script.user_id == current_user.id).first()
+    if not script: raise HTTPException(status_code=404, detail="剧本不存在")
+    cn = chapter_name.replace('%20', ' ')
+    chapters = split_into_chapters(script.original_text, script.language)
+    target, tidx = None, 0
+    for i, ch in enumerate(chapters):
+        if ch["chapter"] == cn or cn in ch["chapter"]: target, tidx = ch, i + 1; break
+    if not target: raise HTTPException(status_code=404, detail=f"未找到: {cn}")
+    ns = await convert_chapter(tidx, target, script.language)
+    if not ns: raise HTTPException(status_code=500, detail="AI转换失败")
+    script.script_content = replace_chapter_in_script(script.script_content, cn, ns)
+    script.updated_at = datetime.now(timezone.utc)
+    db.commit(); db.refresh(script)
+    return {"message": "已重新转换", "script": script.to_dict()}
+
+
+@app.get("/api/scripts/{script_id}/export")
+def export_script(script_id: int, format: str = Query("txt"), db: Session = Depends(get_db), current_user: User = Depends(require_user)):
+    """导出剧本"""
+    script = db.query(Script).filter(Script.id == script_id, Script.user_id == current_user.id).first()
+    if not script or not script.script_content: raise HTTPException(status_code=404, detail="剧本不存在")
+    txt = _yaml_to_text(script.script_content)
+    if format == "yaml":
+        return Response(content=script.script_content, media_type="text/yaml; charset=utf-8",
+                        headers={"Content-Disposition": f"attachment; filename={script.title}.yaml"})
+    elif format == "docx":
+        from docx import Document as D
+        doc = D(); doc.add_heading(script.title, 0)
+        for line in txt.split('\n'): doc.add_paragraph(line)
+        buf = io.BytesIO(); doc.save(buf); buf.seek(0)
+        return Response(content=buf.getvalue(), media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                        headers={"Content-Disposition": f"attachment; filename={script.title}.docx"})
+    else:
+        return Response(content=txt, media_type="text/plain; charset=utf-8",
+                        headers={"Content-Disposition": f"attachment; filename={script.title}.txt"})
+
+
+def _yaml_to_text(yaml_content: str) -> str:
+    """YAML→可读文本"""
+    lines = yaml_content.split('\n')
+    result = []
+    for line in lines:
+        trimmed = line.strip()
+        indent = len(line) - len(line.lstrip()) if trimmed else 0
+        if not trimmed or trimmed == 'script:': continue
+        m = _re.match(r'\w+:\s*"([^"]*)"', trimmed)
+        val = m.group(1) if m else ''
+        if trimmed.startswith('title:'): result.append(f"\n{val}\n{'='*len(val)}")
+        elif trimmed.startswith('chapter:'): result.append(f"\n{'─'*40}\n  {val}\n{'─'*40}")
+        elif trimmed.startswith('location:') and indent == 8: result.append(f"\n📍 {val}")
+        elif trimmed.startswith('time:') and indent == 8: result.append(f"  🕐 {val}")
+        elif trimmed.startswith('description:') and indent == 6: result.append(f"\n  {val}")
+        elif trimmed.startswith('line:'): result.append(f"    💬 {val}")
+        elif trimmed.startswith('action:'): result.append(f"    🎯 {val}")
+        elif trimmed.startswith('timing:'): result.append(f"    上场：{val}")
+    return '\n'.join(result)
+
+
+# 工作区
+class WorkspaceItem(BaseModel):
+    id: str; type: str = "script"; title: str = ""; content: str = ""
+    source_script_id: Optional[int] = None; order: int = 0
+
+class WorkspaceData(BaseModel):
+    items: List[WorkspaceItem] = []
+
+def _ws_file(uid: int) -> str:
+    d = os.path.join(os.path.dirname(os.path.abspath(__file__)), "workspaces")
+    os.makedirs(d, exist_ok=True)
+    return os.path.join(d, f"user_{uid}.json")
+
+@app.get("/api/workspace")
+def get_workspace(current_user: User = Depends(require_user)):
+    try:
+        with open(_ws_file(current_user.id), 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except: return {"items": []}
+
+@app.post("/api/workspace")
+def save_workspace(data: WorkspaceData, current_user: User = Depends(require_user)):
+    with open(_ws_file(current_user.id), 'w', encoding='utf-8') as f:
+        json.dump(data.model_dump(), f, ensure_ascii=False, indent=2)
+    return {"message": "已保存", "items_count": len(data.items)}
 
 
 @app.get("/api/scripts", response_model=List[ScriptResponse])

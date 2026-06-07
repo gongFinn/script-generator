@@ -489,3 +489,159 @@ async def summarize_script(script_content: str, language: str = "zh-CN") -> Opti
     """对剧本进行AI智能摘要"""
     system_prompt = SUMMARY_PROMPTS.get(language, SUMMARY_PROMPTS["zh-CN"])
     return await call_deepseek(system_prompt, script_content, temperature=0.3, max_tokens=4096)
+
+
+# ==================== 长篇分章处理 ====================
+
+import re as _re
+
+CHAPTER_PATTERNS = {
+    "zh-CN": [
+        r'第[一二三四五六七八九十百千\d]+章\s*[：:\s]*.*',
+        r'第\s*\d+\s*章\s*[：:\s]*.*',
+        r'Chapter\s+\d+.*',
+    ],
+    "zh-TW": [
+        r'第[一二三四五六七八九十百千\d]+章\s*[：:\s]*.*',
+        r'第\s*\d+\s*章\s*[：:\s]*.*',
+    ],
+    "en": [
+        r'Chapter\s+\d+.*',
+        r'CHAPTER\s+\d+.*',
+        r'Part\s+\d+.*',
+        r'Act\s+\d+.*',
+    ],
+}
+
+
+def split_into_chapters(text: str, language: str = "zh-CN") -> list:
+    """将长文本按章节拆分为多个段落"""
+    patterns = CHAPTER_PATTERNS.get(language, CHAPTER_PATTERNS["zh-CN"])
+    combined = '|'.join(f'({p})' for p in patterns)
+    matches = list(_re.finditer(combined, text, _re.MULTILINE | _re.IGNORECASE))
+
+    if len(matches) < 2:
+        return [{"chapter": "全文", "content": text.strip(), "char_count": len(text)}]
+
+    chapters = []
+    for i, match in enumerate(matches):
+        start = match.start()
+        end = matches[i + 1].start() if i + 1 < len(matches) else len(text)
+        chapter_title = match.group().strip()
+        content = text[start:end].strip()
+        if len(content) >= 30:
+            chapters.append({"chapter": chapter_title, "content": content, "char_count": len(content)})
+    return chapters
+
+
+CHAPTER_CONVERT_PROMPTS = {
+    "zh-CN": "请将以下小说章节转化为YAML格式剧本场景。这是第{chapter_index}个场景。直接输出YAML场景块（从\"- id: {scene_id}\"开始）：",
+    "en": "Convert this chapter into a YAML script scene (scene {chapter_index}). Output the YAML scene block starting with \"- id: {scene_id}\":",
+    "zh-TW": "請將以下小說章節轉化為YAML格式劇本場景。這是第{chapter_index}個場景。直接輸出YAML場景塊（從\"- id: {scene_id}\"開始）：",
+}
+
+
+async def convert_chapter(scene_id: int, chapter: dict, language: str = "zh-CN") -> Optional[str]:
+    """转换单个章节为YAML场景块"""
+    prompt_template = CHAPTER_CONVERT_PROMPTS.get(language, CHAPTER_CONVERT_PROMPTS["zh-CN"])
+    system_prompt = prompt_template.format(chapter_index=scene_id, scene_id=scene_id)
+    result = await call_deepseek(system_prompt, chapter["content"], temperature=0.7, max_tokens=4096)
+    return _clean_yaml_response(result) if result else None
+
+
+def merge_scenes_to_script(scenes: list, characters_info: str, meta: dict, language: str) -> str:
+    """将多个场景YAML块合并为完整剧本"""
+    lang = language if language in ("zh-CN", "zh-TW", "en") else "zh-CN"
+    yaml = f"""script:
+  meta:
+    title: "{meta.get('title', '未命名剧本')}"
+    source: "{meta.get('source', '原著')}"
+    language: "{lang}"
+    total_scenes: {len(scenes)}
+  characters:
+{characters_info}
+  scenes:
+"""
+    for scene in scenes:
+        indented = '\n'.join('    ' + line if line.strip() else line for line in scene.strip().split('\n'))
+        yaml += indented + '\n'
+    return yaml
+
+
+async def extract_all_characters_from_scenes(scenes: list, language: str = "zh-CN") -> Optional[str]:
+    """从所有场景中提取角色列表并合并去重"""
+    all_names = set()
+    for scene in scenes:
+        result = await extract_characters_from_script(scene, language)
+        if result:
+            try:
+                names = json.loads(result)
+                all_names.update(names)
+            except Exception:
+                pass
+    chars_yaml = ""
+    for i, name in enumerate(sorted(all_names)):
+        chars_yaml += f'    - id: "char_{i+1}"\n      name: "{name}"\n      aliases: []\n      role: "配角"\n      description: ""\n'
+    return chars_yaml or '    []'
+
+
+def extract_chapter_from_script(script_content: str, chapter_name: str) -> Optional[str]:
+    """从完整YAML剧本中提取指定章节的场景块"""
+    lines = script_content.split('\n')
+    scene_lines = []
+    in_target = False
+
+    for i, line in enumerate(lines):
+        trimmed = line.strip()
+        indent = len(line) - len(line.lstrip()) if line.strip() else 999
+
+        if indent == 4 and trimmed.startswith('- id:'):
+            if in_target:
+                break
+            for j in range(i, min(i + 20, len(lines))):
+                if lines[j].strip().startswith('chapter:') and chapter_name in lines[j]:
+                    in_target = True
+                    break
+            if in_target:
+                scene_lines = [line]
+                continue
+
+        if in_target:
+            if indent <= 2 and trimmed:
+                break
+            scene_lines.append(line)
+
+    return '\n'.join(scene_lines) if scene_lines else None
+
+
+def replace_chapter_in_script(script_content: str, chapter_name: str, new_scene_yaml: str) -> str:
+    """替换剧本中指定章节的场景块"""
+    lines = script_content.split('\n')
+    target_start = -1
+    target_end = -1
+
+    for i, line in enumerate(lines):
+        trimmed = line.strip()
+        indent = len(line) - len(line.lstrip()) if line.strip() else 999
+
+        if indent == 4 and trimmed.startswith('- id:'):
+            for j in range(i, min(i + 20, len(lines))):
+                if lines[j].strip().startswith('chapter:') and chapter_name in lines[j]:
+                    target_start = i
+                    break
+            if target_start >= 0 and target_end < 0:
+                continue
+
+        if target_start >= 0 and target_end < 0 and indent <= 2 and trimmed and indent != 4:
+            target_end = i
+            break
+
+    if target_end < 0:
+        target_end = len(lines)
+
+    if target_start >= 0:
+        new_lines = new_scene_yaml.strip().split('\n')
+        result = lines[:target_start] + ['    ' + l if l.strip() else l for l in new_lines] + lines[target_end:]
+        return '\n'.join(result)
+
+    return script_content
