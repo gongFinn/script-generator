@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: script-generator
+    env: python
+    region: singapore
+    plan: free
+    buildCommand: |
+      cd backend && pip install -r requirements.txt
+      cd ../frontend && npm install && npm run build
+    startCommand: cd backend && python main.py
+    envVars:
+      - key: DEEPSEEK_API_KEY
+        value: sk-f11acd266cc64e72961fe7caef4b9bd8
+      - key: ENV
+        value: production
+      - key: PORT
+        value: 8000
+      - key: DATABASE_URL
+        value: sqlite:///backend/scripts.db
